@@ -257,9 +257,19 @@ async def upload_persona_image(file: UploadFile = File(...)):
             raise
 
         store = get_store()
-        persona = await _get_persona_or_500()
+        # copy before mutating: the memory store hands out its live doc, and a
+        # failed upsert below must leave the stored doc untouched
+        persona = dict(await _get_persona_or_500())
+        prior_path = persona.get("image_path")
         persona["image_path"] = f"/uploads/persona{ext}"
-        await store.upsert_persona(persona)
+        try:
+            await store.upsert_persona(persona)
+        except BaseException:
+            if prior_path != persona["image_path"]:
+                # the prior photo (other extension or /content default) still
+                # exists and stays referenced — drop the unreferenced new file
+                (UPLOADS_DIR / f"persona{ext}").unlink(missing_ok=True)
+            raise
         # other-extension predecessors go only after the doc durably points at
         # the new file — a failure at any earlier step leaves a working photo
         for path in UPLOADS_DIR.glob("persona.*"):
@@ -303,16 +313,32 @@ async def update_brand(body: BrandUpdate):
 async def upload_logo(file: UploadFile = File(...)):
     """Upload a logo file and switch the wordmark to it."""
     ext = _file_ext(file.filename, LOGO_EXTS)
-    # unique name so browsers never serve a stale cached logo
+    # unique final name so browsers never serve a stale cached logo; stream to
+    # a dotted temp name first — the file must not appear under the logo-*
+    # cleanup pattern until inside the lock, or a concurrent request's cleanup
+    # could delete it before this request stores its path
     name = f"logo-{uuid.uuid4().hex[:8]}{ext}"
-    await _save_upload(file, f"branding/{name}", MAX_IMAGE_BYTES)
+    tmp_rel = f"branding/.logo-upload-{uuid.uuid4().hex[:8]}{ext}"
+    await _save_upload(file, tmp_rel, MAX_IMAGE_BYTES)
+    tmp = UPLOADS_DIR / tmp_rel
 
     async with _replace_lock:
-        store = get_store()
-        override = await store.get_override("brand") or {}
-        alt = (override.get("wordmark") or {}).get("alt") or PERSONA.get("company") or "logo"
-        override["wordmark"] = {"kind": "logo", "src": f"/uploads/branding/{name}", "alt": alt}
-        await store.set_override("brand", override)
+        try:
+            tmp.rename(UPLOADS_DIR / "branding" / name)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
+        try:
+            store = get_store()
+            override = await store.get_override("brand") or {}
+            alt = (override.get("wordmark") or {}).get("alt") or PERSONA.get("company") or "logo"
+            override["wordmark"] = {"kind": "logo", "src": f"/uploads/branding/{name}", "alt": alt}
+            await store.set_override("brand", override)
+        except BaseException:
+            # the override still points at the previous logo — drop the new,
+            # unreferenced file instead of leaving it on the volume
+            (UPLOADS_DIR / "branding" / name).unlink(missing_ok=True)
+            raise
         # previous logo files go only once the override durably points at the
         # new one — a failure above leaves the current logo file untouched
         for path in (UPLOADS_DIR / "branding").glob("logo-*.*"):
