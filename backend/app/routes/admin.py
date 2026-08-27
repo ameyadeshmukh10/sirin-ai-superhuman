@@ -14,6 +14,7 @@ header; unset means open access (local dev).
 
 from __future__ import annotations
 
+import asyncio
 import re
 import secrets
 import uuid
@@ -34,6 +35,12 @@ LOGO_EXTS = IMAGE_EXTS | {".svg"}
 VIDEO_EXTS = {".mp4", ".webm"}
 
 RESETTABLE_KEYS = {"persona", "brand", "gtm"}
+
+# Serializes the persona/logo replacement flows: their save → persist → delete
+# steps must not interleave, or one request's cleanup could delete the file
+# another request's stored path ends up pointing at. (Single-process app, so
+# an asyncio lock fully serializes them; videos need none — unique filenames.)
+_replace_lock = asyncio.Lock()
 
 
 def require_admin(request: Request) -> None:
@@ -241,22 +248,23 @@ async def upload_persona_image(file: UploadFile = File(...)):
     tmp_rel = f".persona-upload-{uuid.uuid4().hex[:8]}{ext}"
     await _save_upload(file, tmp_rel, MAX_IMAGE_BYTES)
     tmp = UPLOADS_DIR / tmp_rel
-    try:
-        # atomic swap: overwrites a same-extension predecessor in one step
-        tmp.rename(UPLOADS_DIR / f"persona{ext}")
-    except OSError:
-        tmp.unlink(missing_ok=True)
-        raise
+    async with _replace_lock:
+        try:
+            # atomic swap: overwrites a same-extension predecessor in one step
+            tmp.rename(UPLOADS_DIR / f"persona{ext}")
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
 
-    store = get_store()
-    persona = await _get_persona_or_500()
-    persona["image_path"] = f"/uploads/persona{ext}"
-    await store.upsert_persona(persona)
-    # other-extension predecessors go only after the doc durably points at the
-    # new file — a failure at any earlier step leaves a working photo behind
-    for path in UPLOADS_DIR.glob("persona.*"):
-        if path.suffix != ext:
-            path.unlink(missing_ok=True)
+        store = get_store()
+        persona = await _get_persona_or_500()
+        persona["image_path"] = f"/uploads/persona{ext}"
+        await store.upsert_persona(persona)
+        # other-extension predecessors go only after the doc durably points at
+        # the new file — a failure at any earlier step leaves a working photo
+        for path in UPLOADS_DIR.glob("persona.*"):
+            if path.suffix != ext:
+                path.unlink(missing_ok=True)
     return {"image_url": persona["image_path"]}
 
 
@@ -299,16 +307,17 @@ async def upload_logo(file: UploadFile = File(...)):
     name = f"logo-{uuid.uuid4().hex[:8]}{ext}"
     await _save_upload(file, f"branding/{name}", MAX_IMAGE_BYTES)
 
-    store = get_store()
-    override = await store.get_override("brand") or {}
-    alt = (override.get("wordmark") or {}).get("alt") or PERSONA.get("company") or "logo"
-    override["wordmark"] = {"kind": "logo", "src": f"/uploads/branding/{name}", "alt": alt}
-    await store.set_override("brand", override)
-    # previous logo files go only once the override durably points at the new
-    # one — a failure above leaves the current logo file untouched
-    for path in (UPLOADS_DIR / "branding").glob("logo-*.*"):
-        if path.name != name:
-            path.unlink(missing_ok=True)
+    async with _replace_lock:
+        store = get_store()
+        override = await store.get_override("brand") or {}
+        alt = (override.get("wordmark") or {}).get("alt") or PERSONA.get("company") or "logo"
+        override["wordmark"] = {"kind": "logo", "src": f"/uploads/branding/{name}", "alt": alt}
+        await store.set_override("brand", override)
+        # previous logo files go only once the override durably points at the
+        # new one — a failure above leaves the current logo file untouched
+        for path in (UPLOADS_DIR / "branding").glob("logo-*.*"):
+            if path.name != name:
+                path.unlink(missing_ok=True)
     return {"brand": override}
 
 
