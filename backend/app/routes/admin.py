@@ -37,6 +37,9 @@ MAX_VIDEO_BYTES = 200 * 1024 * 1024
 MAX_PDF_BYTES = 60 * 1024 * 1024
 MAX_DECK_SLIDES = 40
 MAX_RENDER_PIXELS = 4096 * 4096  # per rendered PDF page, pre-checked before rasterizing
+# whole-deck output budget (~an average of 1600x1250 per page): a PDF under
+# MAX_PDF_BYTES could otherwise rasterize into gigabytes on the uploads volume
+MAX_TOTAL_RENDER_PIXELS = MAX_DECK_SLIDES * 2_000_000
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 LOGO_EXTS = IMAGE_EXTS | {".svg"}
 VIDEO_EXTS = {".mp4", ".webm"}
@@ -483,13 +486,19 @@ def _render_pdf_to_slides(pdf_path: Path, dest_dir: Path) -> int:
             raise ValueError("the PDF has no pages")
         if doc.page_count > MAX_DECK_SLIDES:
             raise ValueError(f"the PDF has {doc.page_count} pages (max {MAX_DECK_SLIDES})")
+        total_pixels = 0.0
         for number, page in enumerate(doc, start=1):
             # render to ~1600px wide; cap the zoom so tiny pages don't explode
             zoom = min(2.5, 1600 / max(1.0, page.rect.width))
-            # a pathological page geometry must not exhaust memory: bound the
-            # output pixel count before any pixmap is allocated
-            if (page.rect.width * zoom) * (page.rect.height * zoom) > MAX_RENDER_PIXELS:
+            # pathological page geometry must not exhaust memory or disk: bound
+            # the output pixel count — per page and across the whole deck —
+            # before any pixmap is allocated
+            pixels = (page.rect.width * zoom) * (page.rect.height * zoom)
+            if pixels > MAX_RENDER_PIXELS:
                 raise ValueError(f"page {number} is too large to render")
+            total_pixels += pixels
+            if total_pixels > MAX_TOTAL_RENDER_PIXELS:
+                raise ValueError("the PDF's pages are too large to render as one deck")
             pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
             pix.save(dest_dir / f"{number:02d}.png")
         return doc.page_count

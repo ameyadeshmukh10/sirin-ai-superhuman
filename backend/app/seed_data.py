@@ -12,6 +12,8 @@ overrides for seeded items), and "video:<id>" / "deck:<id>" ({"doc": ...} for
 uploaded videos and slide decks).
 """
 
+import shutil
+
 from .config import CONTENT_DIR, UPLOADS_DIR, asset_file, settings
 
 # Persona fields the settings view may override; everything else stays code-owned.
@@ -269,7 +271,15 @@ async def seed(store) -> None:
             seeded_ids.add(doc["_id"])
             await store.upsert_content_item(dict(doc))
         else:
-            await store.delete_override(key)  # files are gone — drop the orphan
+            # files are gone — drop the orphan; an uploaded deck may still have
+            # *some* slides on disk, and once its override and (pruned) item are
+            # gone nothing references them, so sweep its directory too
+            if key.startswith("deck:"):
+                decks_root = (UPLOADS_DIR / "decks").resolve()
+                deck_dir = (UPLOADS_DIR / "decks" / key.removeprefix("deck:")).resolve()
+                if deck_dir != decks_root and deck_dir.is_relative_to(decks_root):
+                    shutil.rmtree(deck_dir, ignore_errors=True)
+            await store.delete_override(key)
 
     # Content removed or renamed here must not linger from a previous seed
     # (a rebrand would otherwise keep serving the old brand's decks from Mongo).
