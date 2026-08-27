@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     mongodb_url: str = ""
     port: int = 8000
 
+    # When set, /api/admin/* (the settings view's API) requires this token in an
+    # X-Admin-Token header. Leave empty for open access in local dev.
+    admin_token: str = ""
+
     @property
     def avatar_enabled(self) -> bool:
         return bool(self.heygen_api_key and self.heygen_avatar_id)

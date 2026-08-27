@@ -3,9 +3,36 @@
 To add content: drop assets under backend/content/ and register them here.
 Video items whose file is missing are skipped (add backend/content/videos/demo.mp4
 to enable the play_video capability).
+
+Runtime edits made in the settings view (/settings) are stored as override
+documents (see routes/admin.py) and re-applied on top of these definitions on
+every seed, so restarts keep edits while code-level rebrands still flow through
+underneath. Override keys: "persona" (field overrides), "content:<id>" (field
+overrides for seeded items), "video:<id>" ({"doc": ...} for uploaded videos).
 """
 
 from .config import CONTENT_DIR, settings
+
+# Persona fields the settings view may override; everything else stays code-owned.
+PERSONA_EDITABLE_FIELDS = {
+    "name",
+    "company",
+    "website",
+    "tagline",
+    "description",
+    "greeting",
+    "default_topics",
+    "mic_disclaimer",
+    "voice_id",
+}
+
+CONTENT_EDITABLE_FIELDS = {"title", "description", "presenter_notes"}
+
+
+def _apply_override(doc: dict, override: dict | None, allowed: set[str]) -> dict:
+    if override:
+        doc.update({k: v for k, v in override.items() if k in allowed})
+    return doc
 
 PERSONA = {
     "_id": "sage",
@@ -168,11 +195,14 @@ VIDEOS = []
 
 
 async def seed(store) -> None:
+    overrides = await store.list_overrides()
+
     persona = dict(PERSONA)
     for ext in ("jpg", "jpeg", "png", "webp"):
         if (CONTENT_DIR / f"persona.{ext}").exists():
             persona["image_path"] = f"/content/persona.{ext}"
             break
+    _apply_override(persona, overrides.get("persona"), PERSONA_EDITABLE_FIELDS)
     await store.upsert_persona(persona)
 
     seeded_ids: set[str] = set()
@@ -183,14 +213,18 @@ async def seed(store) -> None:
             continue
         seeded_ids.add(deck["_id"])
         await store.upsert_content_item(
-            {
-                "_id": deck["_id"],
-                "type": "slide_deck",
-                "title": deck["title"],
-                "description": deck["description"],
-                "assets": [f"/content/{deck['dir']}/{name}" for name in slides],
-                "presenter_notes": deck.get("presenter_notes") or [],
-            }
+            _apply_override(
+                {
+                    "_id": deck["_id"],
+                    "type": "slide_deck",
+                    "title": deck["title"],
+                    "description": deck["description"],
+                    "assets": [f"/content/{deck['dir']}/{name}" for name in slides],
+                    "presenter_notes": deck.get("presenter_notes") or [],
+                },
+                overrides.get(f"content:{deck['_id']}"),
+                CONTENT_EDITABLE_FIELDS,
+            )
         )
 
     for video in VIDEOS:
@@ -198,14 +232,32 @@ async def seed(store) -> None:
             continue
         seeded_ids.add(video["_id"])
         await store.upsert_content_item(
-            {
-                "_id": video["_id"],
-                "type": "video",
-                "title": video["title"],
-                "description": video["description"],
-                "assets": [f"/content/{video['file']}"],
-            }
+            _apply_override(
+                {
+                    "_id": video["_id"],
+                    "type": "video",
+                    "title": video["title"],
+                    "description": video["description"],
+                    "assets": [f"/content/{video['file']}"],
+                },
+                overrides.get(f"content:{video['_id']}"),
+                CONTENT_EDITABLE_FIELDS,
+            )
         )
+
+    # Videos uploaded via the settings view live entirely in their override doc;
+    # re-seed the ones whose file still exists so prune keeps them.
+    for key, override in overrides.items():
+        if not key.startswith("video:"):
+            continue
+        doc = override.get("doc") or {}
+        assets = doc.get("assets") or []
+        asset_rel = assets[0].removeprefix("/content/") if assets else None
+        if asset_rel and (CONTENT_DIR / asset_rel).exists():
+            seeded_ids.add(doc["_id"])
+            await store.upsert_content_item(dict(doc))
+        else:
+            await store.delete_override(key)  # file is gone — drop the orphan
 
     # Content removed or renamed here must not linger from a previous seed
     # (a rebrand would otherwise keep serving the old brand's decks from Mongo).

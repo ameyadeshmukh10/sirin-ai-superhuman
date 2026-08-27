@@ -1,4 +1,4 @@
-import { brand } from "../brand";
+import { useBrand } from "../lib/useBrand";
 
 type Props = {
   micOn: boolean;
@@ -17,6 +17,7 @@ export default function BottomBar(props: Props) {
     micOn, micSupported, listening, speakerOn, ctaHighlight,
     onToggleMic, onToggleSpeaker, onBookMeeting, onEnd,
   } = props;
+  const { brand } = useBrand();
 
   return (
     <div className="flex items-center justify-between border-t border-line bg-panel px-6 py-3.5">

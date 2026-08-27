@@ -25,6 +25,7 @@ class MemoryStore:
         self.events: list[dict] = []
         self.personas: dict[str, dict] = {}
         self.content_items: dict[str, dict] = {}
+        self.overrides: dict[str, dict] = {}
 
     async def upsert_persona(self, doc: dict) -> None:
         self.personas[doc["_id"]] = doc
@@ -32,8 +33,24 @@ class MemoryStore:
     async def upsert_content_item(self, doc: dict) -> None:
         self.content_items[doc["_id"]] = doc
 
+    async def delete_content_item(self, item_id: str) -> None:
+        self.content_items.pop(item_id, None)
+
     async def prune_content_items(self, keep: set[str]) -> None:
         self.content_items = {k: v for k, v in self.content_items.items() if k in keep}
+
+    async def get_override(self, key: str) -> dict | None:
+        doc = self.overrides.get(key)
+        return dict(doc) if doc is not None else None
+
+    async def set_override(self, key: str, fields: dict) -> None:
+        self.overrides[key] = dict(fields)
+
+    async def delete_override(self, key: str) -> None:
+        self.overrides.pop(key, None)
+
+    async def list_overrides(self) -> dict[str, dict]:
+        return {k: dict(v) for k, v in self.overrides.items()}
 
     async def get_persona(self, persona_id: str) -> dict | None:
         return self.personas.get(persona_id)
@@ -92,8 +109,32 @@ class MongoStore:
     async def upsert_content_item(self, doc: dict) -> None:
         await self.db.content_items.replace_one({"_id": doc["_id"]}, doc, upsert=True)
 
+    async def delete_content_item(self, item_id: str) -> None:
+        await self.db.content_items.delete_one({"_id": item_id})
+
     async def prune_content_items(self, keep: set[str]) -> None:
         await self.db.content_items.delete_many({"_id": {"$nin": list(keep)}})
+
+    async def get_override(self, key: str) -> dict | None:
+        doc = await self.db.overrides.find_one({"_id": key})
+        if doc is not None:
+            doc.pop("_id", None)
+        return doc
+
+    async def set_override(self, key: str, fields: dict) -> None:
+        await self.db.overrides.replace_one({"_id": key}, {"_id": key, **fields}, upsert=True)
+
+    async def delete_override(self, key: str) -> None:
+        await self.db.overrides.delete_one({"_id": key})
+
+    async def list_overrides(self) -> dict[str, dict]:
+        # unbounded: seed() prunes content items that aren't restored from here,
+        # so truncating this listing could delete uploaded videos on startup
+        out: dict[str, dict] = {}
+        async for doc in self.db.overrides.find():
+            key = doc.pop("_id")
+            out[key] = doc
+        return out
 
     async def get_persona(self, persona_id: str) -> dict | None:
         return await self.db.personas.find_one({"_id": persona_id})
