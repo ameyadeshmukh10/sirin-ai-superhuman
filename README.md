@@ -66,6 +66,32 @@ immediately. Without `MONGODB_URL` an in-memory store is used (sessions lost on 
 - Persona voice, greeting, topics, and the GTM system prompt:
   `backend/app/seed_data.py` and `backend/app/orchestrator/prompt.py`.
 
+## Settings view
+
+The gear icon on the landing page (or `/settings`) opens a configuration view
+where the whole experience can be edited at runtime — no redeploy needed:
+
+- **Brand**: wordmark (accent-colored text or an uploaded logo file) and the
+  book-a-meeting URL.
+- **Persona**: name, tagline, description, greeting, suggested topics, mic
+  disclaimer, ElevenLabs voice ID, and the persona photo (upload).
+- **Messaging**: the GTM knowledge block injected into every conversation's
+  system prompt.
+- **Slide decks**: titles, descriptions (which steer when the AI shows a deck),
+  and per-slide presenter notes (the spoken talk track).
+- **Videos**: upload MP4/WebM clips with a title and description — the AI can
+  then play them via `play_video` — plus edit or delete them.
+
+Edits are stored as override documents on top of the seeded defaults
+(`backend/app/seed_data.py` stays the base; `seed()` re-applies overrides on
+startup), so they survive restarts when MongoDB is configured and apply to new
+sessions immediately. Each section has a "Reset to defaults" that drops its
+override. Uploaded files land under `backend/content/` on the app server's
+disk — on ephemeral hosting they last until the next redeploy.
+
+Set `ADMIN_TOKEN` to protect the settings API on a public deployment; the
+settings page will prompt for the token. Unset means open access (local dev).
+
 ## Rebranding for a company
 
 The whole experience (theme, wordmark, persona, GTM knowledge, decks, CTA) can
@@ -88,6 +114,7 @@ two backend content files above.
    - avatar mode (optional): `HEYGEN_API_KEY`, `HEYGEN_AVATAR_ID`
      (+ `HEYGEN_SANDBOX=true` for free watermarked testing)
    - `MONGODB_URL` = `${{ MongoDB.MONGO_URL }}` (private-network reference var)
+   - `ADMIN_TOKEN` (recommended: protects the `/settings` view's API)
    - optional: `ANTHROPIC_MODEL`, `ELEVENLABS_VOICE_ID`
 4. Healthcheck path is `/api/health` (set in `railway.json`). Generate a domain.
 

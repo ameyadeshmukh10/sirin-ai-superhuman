@@ -23,6 +23,13 @@ async def health():
     return {"ok": True, "store": get_store().kind}
 
 
+@router.get("/brand")
+async def get_brand():
+    # Runtime brand overrides set in the settings view; the frontend merges
+    # these over its static defaults in brand.ts. Empty object = defaults.
+    return await get_store().get_override("brand") or {}
+
+
 @router.get("/persona")
 async def get_persona():
     persona = await get_store().get_persona(PERSONA["_id"])

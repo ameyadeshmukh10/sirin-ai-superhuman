@@ -88,6 +88,7 @@ class SessionRunner:
             else None
         )
         self.content_items: list[dict] = []
+        self.gtm_override: str | None = None
         self._last_user_text: tuple[str, float] | None = None
         self.avatar: LiveAvatarLink | None = None
         self._pace_task: asyncio.Task | None = None
@@ -117,6 +118,7 @@ class SessionRunner:
     async def run(self) -> None:
         self.writer_task = asyncio.create_task(self._writer())
         self.content_items = await self.store.list_content_items()
+        self.gtm_override = ((await self.store.get_override("gtm")) or {}).get("text")
 
         if self.settings.avatar_enabled:
             self.avatar = await LiveAvatarLink.create(self.settings)
@@ -470,7 +472,7 @@ class SessionRunner:
         """Stream from Claude, handling tool-use continuations within the same gen."""
         history = await self._build_history()
         messages = history + [{"role": "user", "content": user_text}]
-        system = build_system_prompt(self.persona, self.content_items)
+        system = build_system_prompt(self.persona, self.content_items, self.gtm_override)
         stop_reason = "end_turn"
 
         for _round in range(12):  # cap on tool-use continuations (walkthroughs use ~1/slide)

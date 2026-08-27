@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import seed_data
 from .config import CONTENT_DIR, STATIC_DIR, settings
+from .routes.admin import router as admin_router
 from .routes.api import router as api_router
 from .store import init_store
 from .ws.endpoint import router as ws_router
@@ -23,10 +24,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sirin AI Superhuman", lifespan=lifespan)
 app.include_router(api_router)
+app.include_router(admin_router)
 app.include_router(ws_router)
 
-if CONTENT_DIR.exists():
-    app.mount("/content", StaticFiles(directory=CONTENT_DIR), name="content")
+CONTENT_DIR.mkdir(parents=True, exist_ok=True)  # settings-view uploads land here
+app.mount("/content", StaticFiles(directory=CONTENT_DIR), name="content")
 
 if (STATIC_DIR / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")

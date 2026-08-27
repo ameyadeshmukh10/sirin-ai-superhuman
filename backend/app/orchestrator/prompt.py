@@ -123,7 +123,9 @@ interruption as the conversation, not a detour from it.
 """
 
 
-def build_system_prompt(persona: dict, content_items: list[dict]) -> str:
+def build_system_prompt(
+    persona: dict, content_items: list[dict], gtm_override: str | None = None
+) -> str:
     manifest_lines = []
     for item in content_items:
         manifest_lines.append(
@@ -134,11 +136,13 @@ def build_system_prompt(persona: dict, content_items: list[dict]) -> str:
     manifest = "\n".join(manifest_lines) or "- (no visual content is loaded yet)"
 
     company = persona.get("company", persona["name"])
+    # gtm_override is the settings view's runtime replacement for GTM_KNOWLEDGE
+    gtm = gtm_override.strip() if gtm_override and gtm_override.strip() else GTM_KNOWLEDGE
     return (
         f"You are {persona['name']}, {persona['tagline']} — an AI sales guide on the "
         f"{company} website, speaking with a visitor in real time.\n"
         f"{VOICE_RULES}\n"
-        f"{GTM_KNOWLEDGE}\n"
+        f"{gtm}\n"
         f"## Content manifest (the only ids you may pass to show_slides / play_video)\n"
         f"Presenter notes are the talk track: during a walkthrough, slide N's notes "
         f"are the script you speak while slide N is on screen — as written, lightly "

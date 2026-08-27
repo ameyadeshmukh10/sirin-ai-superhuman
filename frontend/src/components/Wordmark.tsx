@@ -1,7 +1,7 @@
-import { brand } from "../brand";
+import { useBrand } from "../lib/useBrand";
 
 export default function Wordmark({ className = "" }: { className?: string }) {
-  const mark = brand.wordmark;
+  const mark = useBrand().brand.wordmark;
   if (mark.kind === "logo") {
     return <img src={mark.src} alt={mark.alt} className={`h-7 ${className}`} />;
   }
