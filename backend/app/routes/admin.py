@@ -15,9 +15,11 @@ header; unset means open access (local dev).
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import secrets
 import uuid
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -35,6 +37,15 @@ LOGO_EXTS = IMAGE_EXTS | {".svg"}
 VIDEO_EXTS = {".mp4", ".webm"}
 
 RESETTABLE_KEYS = {"persona", "brand", "gtm"}
+
+# HeyGen public-avatar catalog, bundled with the app (id, name, preview_url,
+# portrait). The settings view browses it; the chosen avatar is stored as the
+# "avatar" override and applied to new sessions by
+# orchestrator.agent.resolve_avatar_id.
+AVATAR_CATALOG: list[dict] = json.loads(
+    (Path(__file__).resolve().parent.parent / "avatar_catalog.json").read_text()
+)
+AVATARS_BY_ID = {a["id"]: a for a in AVATAR_CATALOG}
 
 # Serializes the persona/logo replacement flows: their save → persist → delete
 # steps must not interleave, or one request's cleanup could delete the file
@@ -99,6 +110,11 @@ class ContentUpdate(BaseModel):
     presenter_notes: list[str] | None = None
 
 
+class AvatarUpdate(BaseModel):
+    # None clears the selection (fall back to the HEYGEN_AVATAR_ID env default)
+    avatar_id: str | None = None
+
+
 # ---------- helpers ----------
 
 
@@ -141,6 +157,19 @@ async def _content_with_flags() -> list[dict]:
     return items
 
 
+async def _avatar_state() -> dict:
+    """The avatar selection as the settings view sees it."""
+    override = await get_store().get_override("avatar") or {}
+    selected_id = override.get("avatar_id")
+    catalog_entry = AVATARS_BY_ID.get(selected_id) or {}
+    return {
+        "selected_id": selected_id,
+        "selected_name": catalog_entry.get("name") or override.get("name"),
+        "env_default_id": settings.heygen_avatar_id or None,
+        "heygen_configured": bool(settings.heygen_api_key),
+    }
+
+
 async def _config() -> dict:
     """Assemble the full settings payload served by GET /api/admin/config."""
     store = get_store()
@@ -150,6 +179,7 @@ async def _config() -> dict:
         "persona": _admin_persona(await _get_persona_or_500()),
         "brand": await store.get_override("brand") or {},
         "gtm": {"default": GTM_KNOWLEDGE.strip(), "custom": gtm.get("text")},
+        "avatar": await _avatar_state(),
         "content": await _content_with_flags(),
     }
 
@@ -360,6 +390,29 @@ async def update_gtm(body: GtmUpdate):
     else:
         await store.delete_override("gtm")
     return {"gtm": {"default": GTM_KNOWLEDGE.strip(), "custom": text or None}}
+
+
+# ---------- avatar ----------
+
+
+@router.get("/avatars")
+async def list_avatars():
+    """The HeyGen public-avatar catalog plus the current selection state."""
+    return {"avatars": AVATAR_CATALOG, **await _avatar_state()}
+
+
+@router.put("/avatar")
+async def update_avatar(body: AvatarUpdate):
+    """Select the avatar new sessions use; null clears back to the env default."""
+    store = get_store()
+    if body.avatar_id:
+        avatar = AVATARS_BY_ID.get(body.avatar_id)
+        if avatar is None:
+            raise HTTPException(422, "unknown avatar_id")
+        await store.set_override("avatar", {"avatar_id": avatar["id"], "name": avatar["name"]})
+    else:
+        await store.delete_override("avatar")
+    return await _avatar_state()
 
 
 # ---------- content items ----------

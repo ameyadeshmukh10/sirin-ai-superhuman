@@ -26,8 +26,10 @@ class Settings(BaseSettings):
     tts_sample_rate: int = 22050
     tts_lookahead: int = 2
 
-    # HeyGen LiveAvatar (LITE mode) — setting both key and avatar id turns avatar
-    # mode on; unset means the audio-only experience, unchanged.
+    # HeyGen LiveAvatar (LITE mode). heygen_avatar_id is the default avatar; a
+    # selection made in the settings view overrides it (see
+    # orchestrator.agent.resolve_avatar_id). Avatar mode needs the API key plus
+    # an avatar from either source; otherwise the audio-only experience runs.
     heygen_api_key: str = ""
     heygen_avatar_id: str = ""
     heygen_sandbox: bool = False
@@ -52,10 +54,6 @@ class Settings(BaseSettings):
     # across redeploys (on Railway, mount the volume at /srv/uploads instead —
     # no env var needed).
     uploads_dir: str = ""
-
-    @property
-    def avatar_enabled(self) -> bool:
-        return bool(self.heygen_api_key and self.heygen_avatar_id)
 
 
 settings = Settings()

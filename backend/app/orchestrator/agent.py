@@ -40,6 +40,15 @@ NUDGE_INSTRUCTION = (
 )
 
 
+async def resolve_avatar_id(store, settings) -> str | None:
+    """The avatar for new sessions: settings-view selection, else the
+    HEYGEN_AVATAR_ID env default. None (or no API key) means audio-only."""
+    override = await store.get_override("avatar") or {}
+    selected = override.get("avatar_id")
+    avatar_id = selected if isinstance(selected, str) and selected else settings.heygen_avatar_id
+    return avatar_id if settings.heygen_api_key and avatar_id else None
+
+
 class _Seq:
     """Shared ordering counter for sentences and UI actions within one turn."""
 
@@ -89,6 +98,7 @@ class SessionRunner:
         )
         self.content_items: list[dict] = []
         self.gtm_override: str | None = None
+        self.avatar_id: str | None = None
         self._last_user_text: tuple[str, float] | None = None
         self.avatar: LiveAvatarLink | None = None
         self._pace_task: asyncio.Task | None = None
@@ -119,9 +129,10 @@ class SessionRunner:
         self.writer_task = asyncio.create_task(self._writer())
         self.content_items = await self.store.list_content_items()
         self.gtm_override = ((await self.store.get_override("gtm")) or {}).get("text")
+        self.avatar_id = await resolve_avatar_id(self.store, self.settings)
 
-        if self.settings.avatar_enabled:
-            self.avatar = await LiveAvatarLink.create(self.settings)
+        if self.avatar_id:
+            self.avatar = await LiveAvatarLink.create(self.settings, self.avatar_id)
             if self.avatar:
                 self.emit(
                     {
@@ -284,7 +295,7 @@ class SessionRunner:
         await old.close(reason="UNKNOWN")
         if self._avatar_restarts < 1:
             self._avatar_restarts += 1
-            self.avatar = await LiveAvatarLink.create(self.settings)
+            self.avatar = await LiveAvatarLink.create(self.settings, self.avatar_id)
         if self.avatar:
             self.emit(
                 {

@@ -30,11 +30,26 @@ export type AdminContentItem = {
   edited: boolean;
 };
 
+export type AvatarItem = {
+  id: string;
+  name: string;
+  preview_url: string;
+  portrait: boolean;
+};
+
+export type AvatarState = {
+  selected_id: string | null;
+  selected_name: string | null;
+  env_default_id: string | null;
+  heygen_configured: boolean;
+};
+
 export type AdminConfig = {
   store: string;
   persona: AdminPersona;
   brand: BrandOverride;
   gtm: { default: string; custom: string | null };
+  avatar: AvatarState;
   content: AdminContentItem[];
 };
 
@@ -106,6 +121,10 @@ export const adminApi = {
 
   updateGtm: (text: string | null) =>
     request<{ gtm: AdminConfig["gtm"] }>("/api/admin/gtm", json("PUT", { text })),
+
+  getAvatars: () => request<{ avatars: AvatarItem[] } & AvatarState>("/api/admin/avatars"),
+  setAvatar: (avatar_id: string | null) =>
+    request<AvatarState>("/api/admin/avatar", json("PUT", { avatar_id })),
 
   updateContent: (
     id: string,
