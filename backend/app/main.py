@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import seed_data
-from .config import CONTENT_DIR, STATIC_DIR, settings
+from .config import CONTENT_DIR, STATIC_DIR, UPLOADS_DIR, settings
 from .routes.admin import router as admin_router
 from .routes.api import router as api_router
 from .store import init_store
@@ -47,8 +47,14 @@ async def admin_body_size_limit(request, call_next):
             return JSONResponse({"detail": "request body too large"}, status_code=413)
     return await call_next(request)
 
-CONTENT_DIR.mkdir(parents=True, exist_ok=True)  # settings-view uploads land here
+CONTENT_DIR.mkdir(parents=True, exist_ok=True)  # repo-baked assets (slides, seed videos)
 app.mount("/content", StaticFiles(directory=CONTENT_DIR), name="content")
+
+# Settings-view uploads live here, separate from CONTENT_DIR so a persistence
+# volume (e.g. Railway volume at /srv/uploads) can be mounted without hiding
+# the assets baked into the image.
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 if (STATIC_DIR / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")

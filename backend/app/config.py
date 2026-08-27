@@ -47,9 +47,31 @@ class Settings(BaseSettings):
     # X-Admin-Token header. Leave empty for open access in local dev.
     admin_token: str = ""
 
+    # Where settings-view uploads (logo, persona photo, videos) are stored.
+    # Defaults to backend/uploads; point it at a mounted volume to keep uploads
+    # across redeploys (on Railway, mount the volume at /srv/uploads instead —
+    # no env var needed).
+    uploads_dir: str = ""
+
     @property
     def avatar_enabled(self) -> bool:
         return bool(self.heygen_api_key and self.heygen_avatar_id)
 
 
 settings = Settings()
+
+# Uploaded assets live outside CONTENT_DIR so a persistence volume can be
+# mounted here without shadowing the repo-baked content (slides, seed videos).
+UPLOADS_DIR = Path(settings.uploads_dir).resolve() if settings.uploads_dir else BACKEND_DIR / "uploads"
+
+
+def asset_file(url_path: str) -> Path | None:
+    """Map a served asset path (/uploads/... or /content/...) to its file on
+    disk; None for non-strings, unknown prefixes, or paths escaping their root."""
+    if not isinstance(url_path, str):
+        return None  # malformed persisted data must never break seeding or deletes
+    for prefix, root in (("/uploads/", UPLOADS_DIR), ("/content/", CONTENT_DIR)):
+        if url_path.startswith(prefix):
+            path = (root / url_path.removeprefix(prefix)).resolve()
+            return path if path.is_relative_to(root.resolve()) else None
+    return None
