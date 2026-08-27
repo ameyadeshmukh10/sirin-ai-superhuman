@@ -12,9 +12,12 @@ overrides for seeded items), and "video:<id>" / "deck:<id>" ({"doc": ...} for
 uploaded videos and slide decks).
 """
 
+import logging
 import shutil
 
 from .config import CONTENT_DIR, UPLOADS_DIR, asset_file, settings
+
+log = logging.getLogger("seed")
 
 # Persona fields the settings view may override; everything else stays code-owned.
 PERSONA_EDITABLE_FIELDS = {
@@ -278,7 +281,15 @@ async def seed(store) -> None:
                 decks_root = (UPLOADS_DIR / "decks").resolve()
                 deck_dir = (UPLOADS_DIR / "decks" / key.removeprefix("deck:")).resolve()
                 if deck_dir != decks_root and deck_dir.is_relative_to(decks_root):
-                    shutil.rmtree(deck_dir, ignore_errors=True)
+                    try:
+                        shutil.rmtree(deck_dir)
+                    except FileNotFoundError:
+                        pass  # already gone — which is the goal
+                    except OSError:
+                        # keep the override so the next seed retries the sweep;
+                        # startup itself must not crash over residual files
+                        log.warning("couldn't remove orphaned deck dir %s — will retry", deck_dir)
+                        continue
             await store.delete_override(key)
 
     # Content removed or renamed here must not linger from a previous seed
