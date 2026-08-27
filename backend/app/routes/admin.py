@@ -18,10 +18,12 @@ import asyncio
 import json
 import re
 import secrets
+import shutil
 import uuid
 from pathlib import Path
 from typing import Literal
 
+import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
@@ -32,9 +34,15 @@ from ..store import get_store
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_VIDEO_BYTES = 200 * 1024 * 1024
+MAX_PDF_BYTES = 60 * 1024 * 1024
+MAX_DECK_SLIDES = 40
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 LOGO_EXTS = IMAGE_EXTS | {".svg"}
 VIDEO_EXTS = {".mp4", ".webm"}
+
+# Uploaded content lives entirely in its override doc, keyed by type; seed()
+# re-registers these on startup while their files still exist.
+CUSTOM_CONTENT_PREFIXES = ("video:", "deck:")
 
 RESETTABLE_KEYS = {"persona", "brand", "gtm"}
 
@@ -149,7 +157,7 @@ async def _content_with_flags() -> list[dict]:
                 "description": item["description"],
                 "assets": item.get("assets") or [],
                 "presenter_notes": item.get("presenter_notes") or [],
-                "custom": f"video:{item['_id']}" in overrides,
+                "custom": any(f"{p}{item['_id']}" in overrides for p in CUSTOM_CONTENT_PREFIXES),
                 "edited": f"content:{item['_id']}" in overrides,
             }
         )
@@ -444,16 +452,101 @@ async def update_content(item_id: str, body: ContentUpdate):
     item.update(fields)
     await store.upsert_content_item(item)
 
-    video_key = f"video:{item_id}"
-    video_override = await store.get_override(video_key)
-    if video_override is not None:
-        # uploaded video: its override doc IS the source of truth
-        video_override["doc"] = {k: v for k, v in item.items()}
-        await store.set_override(video_key, video_override)
+    for prefix in CUSTOM_CONTENT_PREFIXES:
+        custom_override = await store.get_override(f"{prefix}{item_id}")
+        if custom_override is not None:
+            # uploaded content: its override doc IS the source of truth
+            custom_override["doc"] = dict(item)
+            await store.set_override(f"{prefix}{item_id}", custom_override)
+            break
     else:
         override = await store.get_override(f"content:{item_id}") or {}
         override.update({k: v for k, v in fields.items() if k in CONTENT_EDITABLE_FIELDS})
         await store.set_override(f"content:{item_id}", override)
+    return {"content": await _content_with_flags()}
+
+
+def _render_pdf_to_slides(pdf_path: Path, dest_dir: Path) -> int:
+    """Rasterize each PDF page to NN.png in dest_dir; returns the page count.
+
+    Runs in a worker thread (rendering is CPU-bound). Raises ValueError with a
+    user-facing message on anything wrong with the document itself."""
+    try:
+        doc = pymupdf.open(pdf_path)
+    except Exception as exc:
+        raise ValueError("couldn't read that PDF") from exc
+    with doc:
+        if doc.page_count == 0:
+            raise ValueError("the PDF has no pages")
+        if doc.page_count > MAX_DECK_SLIDES:
+            raise ValueError(f"the PDF has {doc.page_count} pages (max {MAX_DECK_SLIDES})")
+        for number, page in enumerate(doc, start=1):
+            # render to ~1600px wide; cap the zoom so tiny pages don't explode
+            zoom = min(2.5, 1600 / max(1.0, page.rect.width))
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
+            pix.save(dest_dir / f"{number:02d}.png")
+        return doc.page_count
+
+
+@router.post("/content/deck")
+async def upload_deck(
+    files: list[UploadFile] = File(...),
+    title: str = Form(...),
+    description: str = Form(...),
+):
+    """Create a slide deck from one PDF (a slide per page) or ordered images."""
+    title_clean = _clean_str(title, max_len=200)
+    description_clean = _clean_str(description)
+    if not title_clean or not description_clean:
+        raise HTTPException(422, "title and description are required")
+    if not files:
+        raise HTTPException(422, "no files uploaded")
+
+    is_pdf = len(files) == 1 and (files[0].filename or "").lower().endswith(".pdf")
+    if not is_pdf and len(files) > MAX_DECK_SLIDES:
+        raise HTTPException(422, f"too many slides (max {MAX_DECK_SLIDES})")
+
+    slug = re.sub(r"[^a-z0-9]+", "_", title_clean.lower()).strip("_")[:40] or "deck"
+    deck_id = f"{slug}_{uuid.uuid4().hex[:6]}"
+    # dotted temp dir: assembled out of sight, renamed into place only when whole
+    tmp_rel = f"decks/.deck-upload-{uuid.uuid4().hex[:8]}"
+    tmp_dir = UPLOADS_DIR / tmp_rel
+    try:
+        if is_pdf:
+            await _save_upload(files[0], f"{tmp_rel}/source.pdf", MAX_PDF_BYTES)
+            try:
+                count = await asyncio.to_thread(
+                    _render_pdf_to_slides, tmp_dir / "source.pdf", tmp_dir
+                )
+            except ValueError as exc:
+                raise HTTPException(422, str(exc))
+            (tmp_dir / "source.pdf").unlink(missing_ok=True)
+            slide_names = [f"{n:02d}.png" for n in range(1, count + 1)]
+        else:
+            # slide order follows the original filenames, sorted
+            ordered = sorted(files, key=lambda f: (f.filename or "").lower())
+            slide_names = []
+            for number, upload in enumerate(ordered, start=1):
+                ext = _file_ext(upload.filename, IMAGE_EXTS)
+                name = f"{number:02d}{ext}"
+                await _save_upload(upload, f"{tmp_rel}/{name}", MAX_IMAGE_BYTES)
+                slide_names.append(name)
+        tmp_dir.rename(UPLOADS_DIR / "decks" / deck_id)
+    except BaseException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+
+    doc = {
+        "_id": deck_id,
+        "type": "slide_deck",
+        "title": title_clean,
+        "description": description_clean,
+        "assets": [f"/uploads/decks/{deck_id}/{name}" for name in slide_names],
+        "presenter_notes": [],
+    }
+    store = get_store()
+    await store.upsert_content_item(doc)
+    await store.set_override(f"deck:{deck_id}", {"doc": doc})
     return {"content": await _content_with_flags()}
 
 
@@ -489,17 +582,24 @@ async def upload_video(
 
 @router.delete("/content/{item_id}")
 async def delete_content(item_id: str):
-    """Delete a video uploaded via settings, including its file on disk."""
+    """Delete uploaded content (a video or deck), including its files on disk."""
     store = get_store()
-    override = await store.get_override(f"video:{item_id}")
-    if override is None:
-        raise HTTPException(422, "only videos uploaded via settings can be deleted")
+    for prefix in CUSTOM_CONTENT_PREFIXES:
+        override = await store.get_override(f"{prefix}{item_id}")
+        if override is not None:
+            break
+    else:
+        raise HTTPException(422, "only content uploaded via settings can be deleted")
     for asset in (override.get("doc") or {}).get("assets") or []:
-        # asset_file handles both /uploads/ and legacy /content/ video paths
+        # asset_file handles both /uploads/ and legacy /content/ paths
         path = asset_file(asset)
         if path is not None:
             path.unlink(missing_ok=True)
-    await store.delete_override(f"video:{item_id}")
+    # uploaded decks own a directory; remove it once its slides are gone
+    deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
+    if deck_dir.is_relative_to(UPLOADS_DIR.resolve()):
+        shutil.rmtree(deck_dir, ignore_errors=True)
+    await store.delete_override(f"{prefix}{item_id}")
     await store.delete_content_item(item_id)
     return {"content": await _content_with_flags()}
 

@@ -82,7 +82,9 @@ where the whole experience can be edited at runtime — no redeploy needed:
 - **Messaging**: the GTM knowledge block injected into every conversation's
   system prompt.
 - **Slide decks**: titles, descriptions (which steer when the AI shows a deck),
-  and per-slide presenter notes (the spoken talk track).
+  and per-slide presenter notes (the spoken talk track). Upload your own
+  slideware — one PDF (each page becomes a slide, rendered server-side) or a
+  set of images — and delete uploaded decks when done.
 - **Videos**: upload MP4/WebM clips with a title and description — the AI can
   then play them via `play_video` — plus edit or delete them.
 

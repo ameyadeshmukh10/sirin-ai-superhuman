@@ -8,7 +8,8 @@ Runtime edits made in the settings view (/settings) are stored as override
 documents (see routes/admin.py) and re-applied on top of these definitions on
 every seed, so restarts keep edits while code-level rebrands still flow through
 underneath. Override keys: "persona" (field overrides), "content:<id>" (field
-overrides for seeded items), "video:<id>" ({"doc": ...} for uploaded videos).
+overrides for seeded items), and "video:<id>" / "deck:<id>" ({"doc": ...} for
+uploaded videos and slide decks).
 """
 
 from .config import CONTENT_DIR, UPLOADS_DIR, asset_file, settings
@@ -252,20 +253,20 @@ async def seed(store) -> None:
             )
         )
 
-    # Videos uploaded via the settings view live entirely in their override doc;
-    # re-seed the ones whose file still exists so prune keeps them.
+    # Content uploaded via the settings view (videos, decks) lives entirely in
+    # its override doc; re-seed what still has files so prune keeps it.
     for key, override in overrides.items():
-        if not key.startswith("video:"):
+        if not key.startswith(("video:", "deck:")):
             continue
         doc = override.get("doc") or {}
         assets = doc.get("assets") or []
-        # asset_file handles both /uploads/ and legacy /content/ video paths
+        # asset_file handles both /uploads/ and legacy /content/ paths
         asset_path = asset_file(assets[0]) if assets else None
         if asset_path is not None and asset_path.exists():
             seeded_ids.add(doc["_id"])
             await store.upsert_content_item(dict(doc))
         else:
-            await store.delete_override(key)  # file is gone — drop the orphan
+            await store.delete_override(key)  # files are gone — drop the orphan
 
     # Content removed or renamed here must not linger from a previous seed
     # (a rebrand would otherwise keep serving the old brand's decks from Mongo).

@@ -135,6 +135,16 @@ export const adminApi = {
       "/api/admin/content/video",
       upload(file, { title, description }),
     ),
+  uploadDeck: (files: File[], title: string, description: string) => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    form.append("title", title);
+    form.append("description", description);
+    return request<{ content: AdminContentItem[] }>("/api/admin/content/deck", {
+      method: "POST",
+      body: form,
+    });
+  },
   deleteContent: (id: string) =>
     request<{ content: AdminContentItem[] }>(`/api/admin/content/${id}`, { method: "DELETE" }),
 
