@@ -67,7 +67,9 @@ UPLOADS_DIR = Path(settings.uploads_dir).resolve() if settings.uploads_dir else 
 
 def asset_file(url_path: str) -> Path | None:
     """Map a served asset path (/uploads/... or /content/...) to its file on
-    disk; None for unknown prefixes or paths that escape their root."""
+    disk; None for non-strings, unknown prefixes, or paths escaping their root."""
+    if not isinstance(url_path, str):
+        return None  # malformed persisted data must never break seeding or deletes
     for prefix, root in (("/uploads/", UPLOADS_DIR), ("/content/", CONTENT_DIR)):
         if url_path.startswith(prefix):
             path = (root / url_path.removeprefix(prefix)).resolve()

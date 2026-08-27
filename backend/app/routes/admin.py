@@ -179,20 +179,14 @@ async def _save_upload(upload: UploadFile, dest_rel: str, max_bytes: int) -> Non
                 if written > max_bytes:
                     raise HTTPException(413, f"file too large (max {max_bytes // (1024 * 1024)}MB)")
                 fh.write(chunk)
-    except HTTPException:
+    except BaseException:
+        # any failure — size cap, client I/O error, cancellation — must not
+        # leave a partial file accumulating on the persistent uploads volume
         dest.unlink(missing_ok=True)
         raise
     if written == 0:
         dest.unlink(missing_ok=True)
         raise HTTPException(422, "empty file")
-
-
-def _remove_matching(pattern: str, subdir: str = "") -> None:
-    """Delete files matching a glob pattern under UPLOADS_DIR (or a subdir of it)."""
-    base = UPLOADS_DIR / subdir if subdir else UPLOADS_DIR
-    if base.exists():
-        for path in base.glob(pattern):
-            path.unlink(missing_ok=True)
 
 
 # ---------- config ----------
@@ -246,13 +240,23 @@ async def upload_persona_image(file: UploadFile = File(...)):
     # photo; the leading dot keeps it out of the persona.* seed detection
     tmp_rel = f".persona-upload-{uuid.uuid4().hex[:8]}{ext}"
     await _save_upload(file, tmp_rel, MAX_IMAGE_BYTES)
-    _remove_matching("persona.*")
-    (UPLOADS_DIR / tmp_rel).rename(UPLOADS_DIR / f"persona{ext}")
+    tmp = UPLOADS_DIR / tmp_rel
+    try:
+        # atomic swap: overwrites a same-extension predecessor in one step
+        tmp.rename(UPLOADS_DIR / f"persona{ext}")
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
     store = get_store()
     persona = await _get_persona_or_500()
     persona["image_path"] = f"/uploads/persona{ext}"
     await store.upsert_persona(persona)
+    # other-extension predecessors go only after the doc durably points at the
+    # new file — a failure at any earlier step leaves a working photo behind
+    for path in UPLOADS_DIR.glob("persona.*"):
+        if path.suffix != ext:
+            path.unlink(missing_ok=True)
     return {"image_url": persona["image_path"]}
 
 
@@ -268,7 +272,9 @@ async def update_brand(body: BrandUpdate):
         if isinstance(body.wordmark, WordmarkLogo) and not body.wordmark.src.startswith(
             ("/uploads/", "/content/")  # /content/ kept for pre-volume overrides
         ):
-            raise HTTPException(422, "logo src must be an uploaded /uploads/ path")
+            raise HTTPException(
+                422, "logo src must be an uploaded /uploads/ (or legacy /content/) path"
+            )
         override["wordmark"] = body.wordmark.model_dump(exclude_none=True)
     if body.book_meeting_url is not None:
         url = body.book_meeting_url.strip()
@@ -292,17 +298,17 @@ async def upload_logo(file: UploadFile = File(...)):
     # unique name so browsers never serve a stale cached logo
     name = f"logo-{uuid.uuid4().hex[:8]}{ext}"
     await _save_upload(file, f"branding/{name}", MAX_IMAGE_BYTES)
-    # only after the new file is safely on disk, drop the previous logo files
-    # (a failed upload must never leave the current logo deleted)
-    for path in (UPLOADS_DIR / "branding").glob("logo-*.*"):
-        if path.name != name:
-            path.unlink(missing_ok=True)
 
     store = get_store()
     override = await store.get_override("brand") or {}
     alt = (override.get("wordmark") or {}).get("alt") or PERSONA.get("company") or "logo"
     override["wordmark"] = {"kind": "logo", "src": f"/uploads/branding/{name}", "alt": alt}
     await store.set_override("brand", override)
+    # previous logo files go only once the override durably points at the new
+    # one — a failure above leaves the current logo file untouched
+    for path in (UPLOADS_DIR / "branding").glob("logo-*.*"):
+        if path.name != name:
+            path.unlink(missing_ok=True)
     return {"brand": override}
 
 
