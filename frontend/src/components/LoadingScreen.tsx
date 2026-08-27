@@ -6,7 +6,7 @@ export default function LoadingScreen({ label }: { label: string }) {
         <span className="absolute inset-3 rounded-full bg-accent/20" />
         <span className="absolute inset-5 rounded-full bg-accent" />
       </div>
-      <p className="text-sm tracking-wide text-gray-400">{label}</p>
+      <p className="text-sm tracking-wide text-muted">{label}</p>
     </div>
   );
 }

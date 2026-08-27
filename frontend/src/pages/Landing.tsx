@@ -35,15 +35,15 @@ export default function Landing() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="relative flex items-center justify-center py-5">
+      <header className="relative flex items-center justify-center py-6">
         <Wordmark className="text-2xl" />
         <Link
           to="/settings"
           aria-label="Settings"
           title="Settings"
-          className="absolute right-6 top-1/2 -translate-y-1/2 rounded-full border border-line p-2.5 text-gray-400 transition hover:border-accent/60 hover:text-accent"
+          className="absolute right-8 top-1/2 -translate-y-1/2 rounded-full border border-line p-2.5 text-muted transition hover:border-accent/50 hover:text-accent"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <circle cx="12" cy="12" r="3" />
             <path
               strokeLinecap="round"
@@ -54,38 +54,42 @@ export default function Landing() {
         </Link>
       </header>
 
-      <main className="mx-auto mb-6 flex w-[min(1200px,94vw)] flex-1 overflow-hidden rounded-3xl border border-accent/60 bg-panel shadow-[0_0_60px_-20px_var(--color-accent)]">
-        <section className="flex w-[42%] min-w-[320px] flex-col justify-between p-10">
-          <h1 className="text-5xl font-semibold leading-tight">
+      <main className="card mx-auto mb-8 flex w-[min(1200px,94vw)] flex-1 flex-col overflow-hidden rounded-3xl lg:flex-row">
+        <section className="flex min-w-0 flex-col justify-center px-8 py-12 sm:px-14 sm:py-16 lg:w-[44%] lg:min-w-[340px]">
+          <p className="eyebrow mb-6">Meet your guide</p>
+
+          <h1 className="font-display text-[3.4rem] font-medium leading-[1.08] tracking-[-0.01em]">
             {persona && (
               <>
-                Meet {persona.name},
+                {persona.name},
                 <br />
-                {persona.tagline}
+                {persona.tagline.replace(/^Your /, "your ")}
               </>
             )}
           </h1>
 
-          <div className="space-y-6">
-            <p className="max-w-md text-[15px] leading-relaxed text-gray-400">
-              {persona?.description ?? ""}
-            </p>
+          <p className="mt-7 max-w-md text-[15px] leading-[1.75] text-muted">
+            {persona?.description ?? ""}
+          </p>
+
+          <div className="mt-10">
             <button
               onClick={start}
               disabled={busy || !persona}
-              className="rounded-full bg-accent px-8 py-3.5 text-lg font-semibold text-ink transition hover:bg-accent-dim disabled:opacity-60"
+              className="rounded-full bg-accent px-8 py-3.5 text-[15px] font-semibold text-ink transition hover:bg-accent-dim disabled:opacity-60"
             >
               {busy ? "Connecting…" : `Ask ${name || "Me"} Anything`}
             </button>
-            {error && <p className="text-sm text-red-400">{error}</p>}
-            <p className="text-xs text-gray-500">
-              By continuing you agree to this demo's terms of use. Conversations are
-              processed by third-party AI services.
-            </p>
+            {error && <p className="mt-4 text-sm text-red-700">{error}</p>}
           </div>
+
+          <p className="mt-8 max-w-md border-t border-line pt-5 text-xs leading-relaxed text-muted/80">
+            By continuing you agree to this demo's terms of use. Conversations are
+            processed by third-party AI services.
+          </p>
         </section>
 
-        <section className="stage-backdrop relative flex flex-1 items-center justify-center">
+        <section className="stage-backdrop relative flex min-h-[300px] flex-1 items-center justify-center border-t border-line lg:border-l lg:border-t-0">
           <PersonaVisual name={name} imageUrl={persona?.image_url} speaking={false} size={340} />
         </section>
       </main>

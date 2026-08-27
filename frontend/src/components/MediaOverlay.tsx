@@ -9,9 +9,9 @@ type Props = {
 
 export default function MediaOverlay({ media, onNavigate, onClose, onVideoEnded }: Props) {
   return (
-    <div className="fade-up absolute inset-4 z-10 flex flex-col overflow-hidden rounded-2xl border border-line bg-ink/95">
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <span className="text-sm text-gray-300">
+    <div className="glass fade-up absolute inset-4 z-10 flex flex-col overflow-hidden rounded-2xl">
+      <div className="flex items-center justify-between border-b border-line px-5 py-2.5">
+        <span className="text-[13px] font-medium tracking-wide text-muted">
           {media.kind === "slides"
             ? `${media.title} — ${media.index + 1}/${media.slides.length}`
             : media.video.title}
@@ -19,7 +19,7 @@ export default function MediaOverlay({ media, onNavigate, onClose, onVideoEnded 
         <button
           onClick={onClose}
           aria-label="Close media"
-          className="rounded-full px-2.5 py-1 text-sm text-gray-400 transition hover:bg-panel-2 hover:text-white"
+          className="rounded-full px-2.5 py-1 text-sm text-muted transition hover:bg-panel-2 hover:text-body"
         >
           ✕
         </button>
@@ -60,7 +60,7 @@ function NavButton({ side, onClick }: { side: "left" | "right"; onClick: () => v
     <button
       onClick={onClick}
       aria-label={side === "left" ? "Previous slide" : "Next slide"}
-      className={`absolute top-1/2 -translate-y-1/2 rounded-full border border-line bg-panel/90 p-3 text-gray-200 transition hover:border-accent/60 hover:text-accent ${
+      className={`glass absolute top-1/2 -translate-y-1/2 rounded-full p-3 text-muted transition hover:border-accent/50 hover:text-accent ${
         side === "left" ? "left-6" : "right-6"
       }`}
     >

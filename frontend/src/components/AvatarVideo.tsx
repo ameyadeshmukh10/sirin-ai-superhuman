@@ -61,8 +61,8 @@ export default function AvatarVideo({ url, token, speaking, muted, name }: Props
 
   return (
     <div
-      className={`relative aspect-video w-[min(560px,60vw)] overflow-hidden rounded-2xl border-2 transition-shadow duration-300 ${
-        speaking ? "border-accent shadow-[0_0_45px_-10px_var(--color-accent)]" : "border-line"
+      className={`relative aspect-video w-[min(560px,60vw)] overflow-hidden rounded-2xl border-2 transition-colors duration-300 ${
+        speaking ? "border-accent/70" : "border-line"
       }`}
     >
       <video ref={videoRef} autoPlay playsInline className="h-full w-full object-cover" />
@@ -70,7 +70,7 @@ export default function AvatarVideo({ url, token, speaking, muted, name }: Props
       {!connected && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-panel">
           <span className="text-4xl font-bold text-accent">{name.charAt(0)}</span>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-muted">
             {failed ? "Avatar unavailable" : "Connecting avatar…"}
           </span>
         </div>
