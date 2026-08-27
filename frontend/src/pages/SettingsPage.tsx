@@ -3,7 +3,7 @@
 // to new sessions immediately and persist across restarts when MongoDB is
 // configured.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { brand as brandDefaults, type Wordmark } from "../brand";
 import WordmarkView from "../components/Wordmark";
@@ -15,6 +15,8 @@ import {
   type AdminConfig,
   type AdminContentItem,
   type AdminPersona,
+  type AvatarItem,
+  type AvatarState,
 } from "../lib/adminApi";
 import { useBrand } from "../lib/useBrand";
 
@@ -395,6 +397,214 @@ function PersonaSection({
           <ErrorText error={save.error} />
         </div>
       </form>
+    </Section>
+  );
+}
+
+// ---------- avatar ----------
+
+function AvatarSection({
+  avatar,
+  onConfig,
+  onAuthNeeded,
+}: {
+  avatar: AvatarState;
+  onConfig: (update: Partial<AdminConfig>) => void;
+  onAuthNeeded: () => void;
+}) {
+  const save = useSave(onAuthNeeded);
+  const [avatars, setAvatars] = useState<AvatarItem[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+
+  // the avatar new sessions actually get: explicit selection, else env default
+  const inUseId = avatar.selected_id ?? avatar.env_default_id;
+
+  useEffect(() => {
+    adminApi
+      .getAvatars()
+      .then((res) => {
+        setAvatars(res.avatars);
+        setFocusId((current) => current ?? res.selected_id ?? res.env_default_id ?? res.avatars[0]?.id ?? null);
+      })
+      .catch((err) => {
+        if (err instanceof AdminAuthError) onAuthNeeded();
+        else setLoadError("Couldn't load the avatar catalog.");
+      });
+  }, [onAuthNeeded]);
+
+  const filtered = useMemo(() => {
+    if (!avatars) return [];
+    const q = query.trim().toLowerCase();
+    return q ? avatars.filter((a) => a.name.toLowerCase().includes(q)) : avatars;
+  }, [avatars, query]);
+
+  const focused =
+    filtered.find((a) => a.id === focusId) ?? filtered[0] ?? null;
+
+  // keep the focused thumbnail visible while paging with the arrows
+  useEffect(() => {
+    if (!focused) return;
+    railRef.current
+      ?.querySelector(`[data-avatar-id="${focused.id}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [focused]);
+
+  const step = (delta: number) => {
+    if (!focused || filtered.length === 0) return;
+    const index = filtered.findIndex((a) => a.id === focused.id);
+    const next = filtered[(index + delta + filtered.length) % filtered.length];
+    setFocusId(next.id);
+  };
+
+  const choose = (id: string | null) =>
+    save.run(async () => {
+      const res = await adminApi.setAvatar(id);
+      onConfig({ avatar: res });
+    });
+
+  return (
+    <Section
+      title="Avatar"
+      hint="The HeyGen presenter that speaks as your guide in avatar mode. Browse the public catalog and pick one; new sessions use it right away."
+    >
+      {!avatar.heygen_configured && (
+        <p className="rounded-xl border border-amber-700/25 bg-amber-600/10 px-4 py-3 text-[13px] leading-relaxed text-amber-900">
+          HEYGEN_API_KEY isn't set on the server, so sessions run audio-only for
+          now. Your selection is saved and takes effect as soon as the key is
+          configured.
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search avatars…"
+          className={`${inputCls} max-w-xs`}
+        />
+        <span className="text-[12px] text-muted">
+          {avatars ? `${filtered.length} of ${avatars.length}` : "Loading…"}
+        </span>
+        <span className="ml-auto text-[13px] text-muted">
+          In use:{" "}
+          <span className="font-medium text-body">
+            {avatar.selected_name ??
+              (avatar.env_default_id ? "server default" : "none — audio-only")}
+          </span>
+        </span>
+      </div>
+
+      {loadError && <ErrorText error={loadError} />}
+
+      {focused && (
+        <div className="relative flex h-80 items-center justify-center overflow-hidden rounded-xl border border-line bg-panel-2/40">
+          <img
+            key={focused.id}
+            src={focused.preview_url}
+            alt={focused.name}
+            className="fade-up h-full w-full object-contain"
+          />
+          {filtered.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => step(-1)}
+                aria-label="Previous avatar"
+                className="glass absolute left-4 top-1/2 -translate-y-1/2 rounded-full p-2.5 text-muted transition hover:border-accent/50 hover:text-accent"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => step(1)}
+                aria-label="Next avatar"
+                className="glass absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-2.5 text-muted transition hover:border-accent/50 hover:text-accent"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </>
+          )}
+          {focused.id === inUseId && (
+            <span className="glass absolute right-4 top-4 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-accent">
+              In use
+            </span>
+          )}
+        </div>
+      )}
+
+      {focused && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-lg font-medium">{focused.name}</p>
+            <p className="text-[12px] text-muted">{focused.portrait ? "Portrait" : "Landscape"}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => choose(focused.id)}
+            disabled={save.state === "saving" || focused.id === avatar.selected_id}
+            className={btnCls}
+          >
+            {save.state === "saving"
+              ? "Saving…"
+              : focused.id === avatar.selected_id
+                ? "Selected ✓"
+                : "Use this avatar"}
+          </button>
+          {avatar.selected_id && (
+            <button
+              type="button"
+              onClick={() => choose(null)}
+              disabled={save.state === "saving"}
+              className={btnGhostCls}
+            >
+              Clear selection
+            </button>
+          )}
+          <ErrorText error={save.error} />
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div ref={railRef} className="scroll-thin -mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
+          {filtered.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              data-avatar-id={a.id}
+              onClick={() => setFocusId(a.id)}
+              title={a.name}
+              className={`relative h-16 w-24 shrink-0 overflow-hidden rounded-lg border transition ${
+                a.id === focused?.id
+                  ? "border-accent ring-1 ring-accent/40"
+                  : a.id === inUseId
+                    ? "border-accent/50"
+                    : "border-line hover:border-stone"
+              }`}
+            >
+              <img
+                src={a.preview_url}
+                alt={a.name}
+                loading="lazy"
+                className="h-full w-full bg-panel-2 object-cover"
+              />
+              {a.id === inUseId && (
+                <span className="absolute bottom-1 right-1 h-2 w-2 rounded-full bg-accent" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {avatars && filtered.length === 0 && (
+        <p className="text-sm text-muted">No avatars match “{query}”.</p>
+      )}
     </Section>
   );
 }
@@ -832,6 +1042,7 @@ export default function SettingsPage() {
               onConfig={onConfig}
               onAuthNeeded={onAuthNeeded}
             />
+            <AvatarSection avatar={config.avatar} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
             <MessagingSection gtm={config.gtm} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
 
             <Section

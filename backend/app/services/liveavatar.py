@@ -34,8 +34,10 @@ KEEPALIVE_INTERVAL = 60.0
 
 
 class LiveAvatarLink:
-    def __init__(self, settings):
+    def __init__(self, settings, avatar_id: str | None = None):
         self.settings = settings
+        # settings view selection wins; HEYGEN_AVATAR_ID env is the fallback
+        self.avatar_id = avatar_id or settings.heygen_avatar_id
         self.session_id: str | None = None
         self.session_token: str | None = None
         self.livekit_url: str | None = None
@@ -49,11 +51,11 @@ class LiveAvatarLink:
         self.started_at = time.monotonic()
 
     @classmethod
-    async def create(cls, settings) -> "LiveAvatarLink | None":
+    async def create(cls, settings, avatar_id: str | None = None) -> "LiveAvatarLink | None":
         """Create + start a LITE session and connect its command socket.
 
         Returns None on any failure; callers fall back to audio-only mode."""
-        link = cls(settings)
+        link = cls(settings, avatar_id)
         try:
             await link._start()
             log.info("LiveAvatar session %s started", link.session_id)
@@ -71,7 +73,7 @@ class LiveAvatarLink:
                 headers={"X-API-KEY": self.settings.heygen_api_key},
                 json={
                     "mode": "LITE",
-                    "avatar_id": self.settings.heygen_avatar_id,
+                    "avatar_id": self.avatar_id,
                     "is_sandbox": self.settings.heygen_sandbox,
                     "max_session_duration": self.settings.heygen_max_session_secs,
                 },

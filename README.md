@@ -75,6 +75,10 @@ where the whole experience can be edited at runtime — no redeploy needed:
   book-a-meeting URL.
 - **Persona**: name, tagline, description, greeting, suggested topics, mic
   disclaimer, ElevenLabs voice ID, and the persona photo (upload).
+- **Avatar**: browse the bundled HeyGen public-avatar catalog
+  (`backend/app/avatar_catalog.json`) and pick the presenter used in avatar
+  mode; the selection overrides `HEYGEN_AVATAR_ID` for new sessions (the API
+  key is still required for avatar mode to run).
 - **Messaging**: the GTM knowledge block injected into every conversation's
   system prompt.
 - **Slide decks**: titles, descriptions (which steer when the AI shows a deck),
