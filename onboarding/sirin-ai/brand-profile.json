@@ -1,0 +1,51 @@
+{
+  "company": "Sirin AI",
+  "slug": "sirin-ai",
+  "website": "sirin-ai.com",
+  "tagline": "Custom AI agents, managed end to end",
+  "positioning": "Sirin designs, deploys and manages custom AI agents with the interfaces, integrations and ongoing support required to make them useful inside real businesses.",
+  "colors": {
+    "dark_primary": "#202124",
+    "dark_deep": "#17191a",
+    "dark_deepest": "#111314",
+    "cream": "#f8f6f1",
+    "cream_2": "#fbfaf7",
+    "accent_bronze": "#a57c4f",
+    "bronze_light": "#d6b990",
+    "sage": "#6a755e",
+    "sage_dark": "#596551",
+    "sage_light": "#a9b69c",
+    "notes": "ink-on-#a57c4f contrast = 4.70:1 (passes 4.5). Sage family is the secondary landscape hue."
+  },
+  "typography": {
+    "display": "Canela (licensed, NOT loaded by the site), fallback Cormorant Garamond (Google Fonts), then Georgia serif",
+    "body": "System sans stack (-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, ...)",
+    "google_fonts": "Cormorant Garamond is available on Google Fonts; the site itself loads no webfonts",
+    "chosen_for_app": "System sans stack (their body font) for --font-brand; serif display is a validation question"
+  },
+  "assets": {
+    "favicon_svg": "favicon.svg (self-inverting wrapper around 512x187 PNG mark) -> frontend/public/favicon.svg",
+    "logo_mark_png": "512x187 dark swoosh mark extracted from favicon.svg",
+    "apple_touch_icon": "cream mark on #202124, 180x180",
+    "og_image": "mark + SIRIN AI over coastal cliff photo, 1200x630",
+    "wordmark": "Site header uses TEXT 'SIRIN AI' in letterspaced caps, not a logo image"
+  },
+  "proof_allowlist": [],
+  "pricing": null,
+  "booking_url": "https://calendly.com/cole-brooker-sirin-ai/30min",
+  "contact_email": "cole.brooker@sirin-ai.ai",
+  "linkedin": "https://www.linkedin.com/company/sirin-ai/",
+  "open_questions": [
+    "No public customer names, case studies, or metrics — persona will cite none. Any proof to add?",
+    "Pricing is not published — persona says pricing is tailored and offers the Calendly meeting. Correct?",
+    "Confirm booking URL: https://calendly.com/cole-brooker-sirin-ai/30min (found in the site's contact CTA).",
+    "No security/compliance claims (SOC 2, GDPR, etc.) on the site — persona deflects security specifics to a meeting. Anything citable?",
+    "Display font Canela is licensed and not even loaded by the site; app uses the system sans stack (their body font). Want Cormorant Garamond (their declared serif fallback, on Google Fonts) as the app's brand font instead?",
+    "Persona name default 'Sage' — alternatives to choose from.",
+    "Real vector logo / white wordmark for the dark header (site header is plain text 'SIRIN AI'; app mirrors that).",
+    "Real slide deck exports to replace generated placeholders.",
+    "Demo video (previous brand's reel removed).",
+    "ELEVENLABS_VOICE_ID env var for the voice.",
+    "No named integrations on the site ('the systems your teams already operate across') — persona names none. Any to allow?"
+  ]
+}

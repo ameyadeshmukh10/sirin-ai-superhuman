@@ -9,6 +9,6 @@ export type Wordmark =
 export const brand = {
   // Text form: characters [accentStart, accentEnd) render in the accent color
   // (accentEnd defaults to the end of the string).
-  wordmark: { kind: "text", text: "sirin", accentStart: 2 } as Wordmark,
-  bookMeetingUrl: "https://everworker.ai/lets-talk",
+  wordmark: { kind: "text", text: "SIRIN AI", accentStart: 6 } as Wordmark,
+  bookMeetingUrl: "https://calendly.com/cole-brooker-sirin-ai/30min",
 };

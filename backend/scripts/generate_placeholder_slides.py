@@ -54,85 +54,77 @@ FOOTER = (75, 85, 99)
 # presenter_notes count — slide N is on screen while note N is spoken.
 DECKS: dict[str, list[tuple[str, list[str]]]] = {
     "overview": [
-        ("Double your pipeline this quarter", [
-            "Autonomous AI workers that generate pipeline on autopilot",
-            "Trusted by revenue teams at growth-stage companies",
+        ("AI agents built around your business", [
+            "Custom AI agents, managed end to end",
+            "Designed, deployed and managed by one partner",
         ]),
-        ("From signal to booked meeting", [
-            "Inbound and outbound handled end to end",
-            "Research, outreach, follow-up, and CRM logging built in",
-            "Meetings land directly on your reps' calendars",
+        ("An AI capability, delivered whole", [
+            "Not software you have to assemble",
+            "One partner. One system. One accountable outcome.",
         ]),
-        ("Live in-market signal intelligence", [
-            "Continuously scans your ICP for buying signals",
-            "Outreach starts before in-market accounts go cold",
+        ("A complete operating system per outcome", [
+            "Intelligence · Experience · Systems · Operations",
+            "Built around a real business process",
         ]),
-        ("3 to 5x more pipeline, same team", [
-            "The full buying group enriched and worked simultaneously",
-            "Reps spend their time in meetings, not in operations",
+        ("Built for the work that matters", [
+            "CX · Sales · Operations · Finance · Research",
+            "Purpose-built around your workflow and systems",
         ]),
-        ("Memgraph: $2.7M in 90 days", [
-            "Additional pipeline generated across inbound and outbound",
-            "Now scaling to 100,000 contacts a month",
+        ("Most AI projects stop at the prototype", [
+            "Sirin starts there",
+            "Improved and managed under real operating conditions",
         ]),
     ],
     "how_it_works": [
-        ("An autonomous multi-agent system", [
-            "SDR AI agents tailored to your specific GTM",
-            "A context engine that knows your product and messaging",
-            "A universal connector into your CRM and data stack",
+        ("From brief to operating agent", [
+            "Strategy, workflow design, UI, integrations, deployment",
+            "Ongoing optimization once the agent is live",
         ]),
-        ("Signal to send, zero human time", [
-            "Runs fully on its own once configured",
-            "Brings your team in when a meeting books or a reply lands",
-            "Everything logged to your CRM like any other rep",
+        ("A custom agent, not a template", [
+            "Designed around a real business process",
+            "Context, tools, rules and reasoning to do useful work",
         ]),
-        ("A built-in playbook", [
-            "Best practices baked in at every level",
-            "Email and LinkedIn combined with human SDRs on the phones",
+        ("Connected to your systems", [
+            "Retrieves context, takes action, updates source of truth",
+            "A clear UI: dashboard, chat, workflow or review queue",
         ]),
-        ("Live in five weeks", [
-            "A forward-deployed GTM engineer configures everything",
-            "Email and LinkedIn send capacity purchased and warmed for you",
+        ("Managed after deployment", [
+            "Sirin monitors, improves and evolves the agent",
+            "An operating capability, not a prototype",
         ]),
     ],
-    "outreach_quality": [
-        ("From account to buying group", [
-            "Trained on your ICP and buying group",
-            "Built-in enrichment acquires every relevant contact",
+    "differentiation": [
+        ("Most AI projects stop at the prototype", [
+            "Sirin starts there",
+            "Accountable for usefulness in practice, not a demo",
         ]),
-        ("Deeply researched, personally written", [
-            "Company-level and contact-level research on every account",
-            "Personalized email and LinkedIn outreach per contact",
+        ("Not software you have to assemble", [
+            "Intelligence, interface, integrations, operations — whole",
+            "One partner. One system. One accountable outcome.",
         ]),
-        ("Lands in the primary inbox", [
-            "Dedicated email deliverability infrastructure",
-            "Your domain protected, every touch logged to CRM",
-        ]),
-        ("2x replies, safely scaled", [
-            "Built-in LinkedIn infrastructure and account capacity",
-            "Safe, secure scale of your LinkedIn channel — included",
+        ("No platform evaluation required", [
+            "Start with the work, not another tool to maintain",
+            "Tell us where work is slow, repetitive or hard to scale",
         ]),
     ],
-    "infrastructure": [
-        ("Email infrastructure, done for you", [
-            "Domains, mailboxes, warmup, and authentication managed",
-            "Private warmup pool, provider matching, no tracking pixels",
+    "trust": [
+        ("Context · Action · Clarity · Control", [
+            "The same principles behind every Sirin agent",
+            "Exceptions flagged and routed to the right owner",
         ]),
-        ("LinkedIn with human-pattern limits", [
-            "ID-verified real profiles on residential infrastructure",
-            "Conservative caps: one connection request, two messages",
+        ("Built for real operating conditions", [
+            "Monitored, improved and evolved after deployment",
+            "Human judgment stays where it matters most",
         ]),
     ],
     "pricing": [
-        ("Three packages", [
-            "Starter $3.5k · Scale $5.5k · Advanced $7k per month",
-            "Every package includes a forward-deployed GTM engineer",
-            "Sending infrastructure and configuration included",
+        ("Start with the work", [
+            "Pricing is tailored to the work an agent takes on",
+            "Tell us where work is slow, repetitive or hard to scale",
         ]),
-        ("Live in five weeks", [
-            "Go-live support is part of every package, not an add-on",
-            "Book a meeting to scope which tier fits your team",
+        ("Start a conversation", [
+            "Scope what your agent should do and connect to",
+            "Book time with the Sirin team",
         ]),
     ],
 }

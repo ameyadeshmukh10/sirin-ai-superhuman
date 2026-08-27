@@ -8,26 +8,27 @@ to enable the play_video capability).
 from .config import CONTENT_DIR, settings
 
 PERSONA = {
-    "_id": "evie",
-    "name": "Evie",
-    "company": "EverWorker",
-    "website": "everworker.ai",
-    "tagline": "Your Everworker Guide",
+    "_id": "sage",
+    "name": "Sage",
+    "company": "Sirin AI",
+    "website": "sirin-ai.com",
+    "tagline": "Your Sirin AI Guide",
     "description": (
-        "Evie is our AI-powered guide, here to show you how EverWorker's autonomous AI "
-        "workers research accounts, write personalized outreach, and book meetings — so "
-        "your team generates more pipeline, on autopilot. Whether you're exploring or "
-        "ready to put AI workers on your funnel, Evie has the answers."
+        "Sage is Sirin AI's guide to custom AI agents, managed end to end. Ask how "
+        "Sirin designs, deploys and manages agents — with the interfaces, integrations "
+        "and ongoing support that make them useful inside real businesses — and explore "
+        "what an agent could take on for your team. Whether you're just curious or ready "
+        "to start a conversation, Sage can walk you through it."
     ),
     "voice_id": settings.elevenlabs_voice_id,
     "image_path": None,  # set automatically at seed time if backend/content/persona.* exists
     "greeting": (
-        "Hi there, I'm Evie, EverWorker's AI guide. I can show you how autonomous AI "
-        "workers research accounts, write personalized outreach, and book meetings for "
-        "your team — and help you book time with our team if you'd like to go deeper. "
-        "What brought you here today?"
+        "Hi, I'm Sage, your guide to Sirin AI. Sirin designs, deploys and manages "
+        "custom AI agents — with the interfaces, integrations and ongoing support that "
+        "make them genuinely useful inside real businesses. What kind of work is slow "
+        "or repetitive for your team right now?"
     ),
-    "default_topics": ["What is EverWorker?", "How does outbound work?", "Pricing"],
+    "default_topics": ["What is Sirin AI?", "What can an agent take on?", "How do we start?"],
     "mic_disclaimer": (
         "If you use the microphone, your audio is processed by your browser's speech "
         "service and this demo's AI providers."
@@ -38,30 +39,32 @@ SLIDE_DECKS = [
     {
         "_id": "overview_deck",
         "type": "slide_deck",
-        "title": "EverWorker Overview",
+        "title": "Sirin AI Overview",
         "description": (
-            "5 slides: 'Double your pipeline this quarter' title with customer logos, "
-            "the signal-to-booked-meeting flow, live in-market signal intelligence, "
-            "'3 to 5x more pipeline, same team', and the Memgraph $2.7M-in-90-days "
-            "results story. Show when someone asks what EverWorker is or wants the "
-            "big picture."
+            "5 slides: 'AI agents built around your business', an AI capability "
+            "delivered whole, the four layers (intelligence, experience, systems, "
+            "operations), the work it's built for (CX, sales, operations, finance, "
+            "research), and 'most AI projects stop at the prototype — Sirin starts "
+            "there'. Show when someone asks what Sirin AI is or wants the big picture."
         ),
         "dir": "slides/overview",
         "presenter_notes": [
-            "EverWorker is a multi-agent AI system that generates pipeline on autopilot.",
-            "It handles both inbound and outbound, integrates with your CRM, researches "
-            "accounts and leads, writes and sends email plus LinkedIn sequences, and "
-            "books meetings directly on your reps' calendars.",
-            "Built-in agentic signal intelligence continuously scans your ICP to surface "
-            "in-market accounts and begins outreach before they go cold.",
-            "As it works it automatically enriches the buying group and reaches out to "
-            "them simultaneously with personalized messaging — it handles the operations, "
-            "research, writing, and follow-up for LinkedIn and email, so your reps spend "
-            "more time in meetings and closing.",
-            "EverWorker generated an additional two point seven million dollars in "
-            "pipeline for Memgraph in ninety days, combining their inbound and outbound "
-            "signal intelligence — they're now scaling to process one hundred thousand "
-            "contacts a month.",
+            "Sirin builds custom AI agents around your business and manages them end to "
+            "end — one partner that designs, deploys and runs the agent for you.",
+            "It's not software you have to assemble. Sirin combines the intelligence, "
+            "the interface, the integrations and the operational support that make an "
+            "agent genuinely useful inside your company — one partner, one system, one "
+            "accountable outcome.",
+            "Every agent is built as a complete operating system for a specific outcome: "
+            "a custom agent designed around a real business process, a purpose-built "
+            "interface, deep integrations into your systems, and ongoing management "
+            "after deployment.",
+            "Sirin agents are built for the work that matters to your team — customer "
+            "experience, sales, operations, finance and research — and each one is "
+            "designed around your company's own workflow and systems.",
+            "Most AI projects stop when the prototype works. Sirin starts there — "
+            "taking responsibility for how people experience the agent, how it connects "
+            "to the business, and how it improves after deployment.",
         ],
     },
     {
@@ -69,118 +72,99 @@ SLIDE_DECKS = [
         "type": "slide_deck",
         "title": "How It Works",
         "description": (
-            "4 slides: the autonomous multi-agent system architecture, signal-to-send "
-            "with zero human time, the built-in playbook (287% multi-channel "
-            "multiplier), and the 5-week go-live timeline with a forward-deployed GTM "
-            "engineer. Show when someone asks how it works under the hood or about "
-            "implementation."
+            "4 slides: from brief to operating agent (strategy, workflow design, UI, "
+            "integrations, deployment, optimization), a custom agent designed around a "
+            "real process, connected systems plus a purpose-built interface, and "
+            "ongoing management after deployment. Show when someone asks how it works, "
+            "what an engagement looks like, or about implementation."
         ),
         "dir": "slides/how_it_works",
         "presenter_notes": [
-            "EverWorker is an autonomous multi-agent system — at its core, multiple SDR "
-            "AI agents tailored to your specific GTM; there's no minimum or maximum, we "
-            "size it to your GTM and agent count has no impact on pricing. A built-in "
-            "context engine means it knows your product, personas, messaging, offers, "
-            "case studies, and writing style. The agentic signal intelligence layer "
-            "researches technologies, hiring, and news signals, deanonymizes website "
-            "traffic, and aligns to your marketing and ABM signals. You invoke it on "
-            "flexible triggers — always-on for inbound demo requests, schedules for "
-            "outbound, CRM lists and properties, CSV uploads, even chat. And a universal "
-            "connector integrates your CRM, its own email and LinkedIn infrastructure, "
-            "private LLM endpoints, B2B data providers, and your meeting scheduler.",
-            "Once configured it runs fully on its own — no human in the loop required, "
-            "though you can hand it a list or a task whenever you want. It brings your "
-            "team in when a meeting is booked or a positive reply comes back, and "
-            "everything is logged in your CRM just like outreach from any other rep.",
-            "Best practices are built in at every level to maximize output, and we coach "
-            "your team on human-AI augmentation — AI SDR outreach over email and "
-            "LinkedIn combined with human SDRs on the phones works extremely well.",
-            "The whole solution is configured for you by a forward-deployed GTM engineer "
-            "included in your package. Most customers are fully live in five weeks; the "
-            "fastest possible is two weeks, because we purchase your email and LinkedIn "
-            "send capacity — included — and the accounts need two weeks to warm.",
+            "Every engagement runs from brief to operating agent — strategy, workflow "
+            "design, the interface, integrations, deployment, and then ongoing "
+            "optimization once it's live.",
+            "The agent itself is designed around a real business process in your "
+            "company, with the context, tools, rules and reasoning it needs to do "
+            "useful work — not a generic template.",
+            "It connects to the systems your teams already operate across, so it can "
+            "retrieve context, take action and update the source of truth — and your "
+            "people work with it through a clear, purpose-built interface, whether "
+            "that's a dashboard, a chat experience, a workflow or a review queue.",
+            "After deployment, Sirin keeps managing it — monitoring, improving and "
+            "evolving the agent over time. You're not buying a prototype; you're adding "
+            "an operating capability.",
         ],
     },
     {
-        "_id": "outreach_quality_deck",
+        "_id": "differentiation_deck",
         "type": "slide_deck",
-        "title": "Outreach Quality",
+        "title": "The Sirin Difference",
         "description": (
-            "4 slides: account-to-buying-group enrichment, deeply researched personally "
-            "written messages, landing in the primary inbox, and 2x replies safely "
-            "scaled. Show when someone doubts AI outreach quality, worries about spam, "
-            "or asks about personalization."
+            "3 slides: most AI projects stop when the prototype works — Sirin starts "
+            "there, not software you have to assemble, and no platform evaluation "
+            "required — start with the work. Show when someone compares Sirin to "
+            "building in-house, to AI platforms and tools, or doubts AI projects make "
+            "it into real use."
         ),
-        "dir": "slides/outreach_quality",
+        "dir": "slides/differentiation",
         "presenter_notes": [
-            "EverWorker is trained on your ICP and buying group, and built-in data "
-            "enrichment acquires the full buying group for every account.",
-            "It runs company-level and contact-level research to create personalized "
-            "email and LinkedIn outreach for every contact in that buying group.",
-            "It sends through its own email deliverability infrastructure, built to the "
-            "highest standard in the market — the AI SDR lands in the primary inbox, "
-            "your domain is protected, and every email and reply is logged to your CRM "
-            "automatically. Our team is happy to walk through the details.",
-            "It also uses its own built-in LinkedIn infrastructure, including "
-            "deliverability and LinkedIn account capacity — safe, secure scale of your "
-            "LinkedIn channel, included.",
+            "Here's the difference: most AI projects stop when the prototype works. "
+            "Sirin starts there — taking responsibility for how people experience the "
+            "agent, how it connects to the business, how it behaves under real "
+            "operating conditions, and how it improves after deployment.",
+            "You're not assembling software. Sirin delivers the intelligence, the "
+            "interface, the integrations and the operational support as one whole "
+            "capability — one partner, one system, one accountable outcome.",
+            "And there's no platform evaluation required — you start with the work "
+            "itself. Tell us where work is slow, repetitive or difficult to scale, and "
+            "the team helps determine what an agent should do and what it needs to "
+            "connect to.",
         ],
     },
     {
-        "_id": "infrastructure_deck",
+        "_id": "trust_deck",
         "type": "slide_deck",
-        "title": "Sending Infrastructure",
+        "title": "Clarity & Control",
         "description": (
-            "2 slides: email infrastructure done for you (domains, warmup, "
-            "deliverability) and LinkedIn infrastructure with human-pattern limits. "
-            "Show on domain-safety, deliverability, or account-risk concerns."
+            "2 slides: the context-action-clarity-control principles with exceptions "
+            "flagged and routed to the right owner, then managed under real operating "
+            "conditions with human judgment kept where it matters. Show on safety, "
+            "control, oversight, or compliance concerns."
         ),
-        "dir": "slides/infrastructure",
+        "dir": "slides/trust",
         "presenter_notes": [
-            "Deliverability is the probability an email reaches the inbox instead of "
-            "spam — it's a function of sender reputation, infrastructure, and "
-            "recipient-side filtering, scored continuously by Google, Microsoft, and the "
-            "security gateways in front of corporate inboxes. EverWorker optimizes every "
-            "layer: mailboxes and send rate, domain health, authentication, "
-            "provider matching, a private warmup pool, and no tracking pixels.",
-            "On LinkedIn there are three safeguard layers: ID-verified real rental "
-            "profiles, dedicated residential-proxy infrastructure with human-pattern "
-            "pacing, and a value-led execution layer capped at one connection request "
-            "plus two messages.",
+            "Every Sirin agent runs on the same principles — context, action, clarity "
+            "and control. Agents can review work against your rules and policies, flag "
+            "exceptions, and route higher-risk decisions to the right owner instead of "
+            "acting alone.",
+            "And because Sirin manages the agent under real operating conditions — "
+            "monitoring, improving and evolving it over time — the cases where human "
+            "judgment matters most keep surfacing to your team. For security "
+            "specifics, the best next step is a conversation with the Sirin team.",
         ],
     },
     {
         "_id": "pricing_deck",
         "type": "slide_deck",
-        "title": "Pricing & Plans",
+        "title": "How Engagements Work",
         "description": (
-            "2 slides: the three packages (Starter $3.5k, Scale $5.5k, Advanced $7k "
-            "monthly) with what's included, then the 5-week go-live plan. Show whenever "
-            "pricing, cost, or plans come up."
+            "2 slides: pricing is tailored to the work an agent takes on ('start with "
+            "the work'), then next steps — book a conversation with the Sirin team. "
+            "Show whenever pricing, cost, or plans come up."
         ),
         "dir": "slides/pricing",
         "presenter_notes": [
-            "Pricing plans start at three and a half thousand dollars a month — three "
-            "packages, and every one includes the forward-deployed GTM engineer, the "
-            "email and LinkedIn infrastructure, and the full configuration.",
-            "Most customers are live in five weeks, and go-live support is part of every "
-            "package, not an add-on.",
+            "Sirin doesn't publish pricing — every agent is scoped and priced around "
+            "the work it takes on. The starting point is simple: tell us where work is "
+            "slow, repetitive or difficult to scale.",
+            "From there, the team helps determine what an agent should do, how it "
+            "should work, and what it needs to connect to. The best next step is to "
+            "book a conversation with the Sirin team.",
         ],
     },
 ]
 
-VIDEOS = [
-    {
-        "_id": "demo_clip",
-        "type": "video",
-        "title": "EverWorker demo reel",
-        "description": (
-            "A thirty-one second EverWorker demo reel. Play when someone asks to see "
-            "EverWorker in action, asks for a demo, or wants the quick version."
-        ),
-        "file": "videos/demo.mp4",
-    },
-]
+VIDEOS = []
 
 
 async def seed(store) -> None:

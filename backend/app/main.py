@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Everworker Superhuman", lifespan=lifespan)
+app = FastAPI(title="Sirin AI Superhuman", lifespan=lifespan)
 app.include_router(api_router)
 app.include_router(ws_router)
 
