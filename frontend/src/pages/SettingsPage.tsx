@@ -23,7 +23,7 @@ const inputCls =
 const btnCls =
   "rounded-full bg-accent px-5 py-2 text-sm font-semibold text-ink transition hover:bg-accent-dim disabled:opacity-50";
 const btnGhostCls =
-  "rounded-full border border-line px-4 py-2 text-sm text-gray-400 transition hover:border-accent/60 hover:text-accent disabled:opacity-50";
+  "rounded-full border border-line bg-panel px-4 py-2 text-sm text-muted transition hover:border-accent/50 hover:text-accent disabled:opacity-50";
 
 type SaveState = "idle" | "saving" | "saved";
 
@@ -77,9 +77,9 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-line bg-panel p-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {hint && <p className="mt-1 text-[13px] leading-relaxed text-gray-500">{hint}</p>}
+    <section className="card rounded-2xl p-7">
+      <h2 className="font-display text-[22px] font-medium">{title}</h2>
+      {hint && <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted">{hint}</p>}
       <div className="mt-5 space-y-4">{children}</div>
     </section>
   );
@@ -88,14 +88,14 @@ function Section({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[13px] font-medium text-gray-400">{label}</span>
+      <span className="mb-1.5 block text-[12px] font-medium tracking-wide text-muted">{label}</span>
       {children}
     </label>
   );
 }
 
 function ErrorText({ error }: { error: string | null }) {
-  return error ? <p className="text-sm text-red-400">{error}</p> : null;
+  return error ? <p className="text-sm text-red-800">{error}</p> : null;
 }
 
 // ---------- brand ----------
@@ -178,7 +178,7 @@ function BrandSection({
     >
       <form onSubmit={submit} className="space-y-4">
         <div className="flex items-center gap-5 text-sm">
-          <span className="text-[13px] font-medium text-gray-400">Wordmark</span>
+          <span className="text-[12px] font-medium tracking-wide text-muted">Wordmark</span>
           {(["text", "logo"] as const).map((m) => (
             <label key={m} className="flex cursor-pointer items-center gap-1.5">
               <input
@@ -191,7 +191,7 @@ function BrandSection({
               {m === "text" ? "Text" : "Logo image"}
             </label>
           ))}
-          <span className="ml-auto flex items-center gap-2 text-[13px] text-gray-500">
+          <span className="ml-auto flex items-center gap-2 text-[13px] text-muted">
             Current: <WordmarkView className="text-base" />
           </span>
         </div>
@@ -228,7 +228,7 @@ function BrandSection({
             {logoSrc ? (
               <img src={logoSrc} alt="logo" className="h-10 rounded bg-panel-2 p-1" />
             ) : (
-              <p className="text-sm text-gray-500">No logo uploaded yet.</p>
+              <p className="text-sm text-muted">No logo uploaded yet.</p>
             )}
             <FilePicker
               label={logoSrc ? "Replace logo…" : "Upload logo…"}
@@ -435,7 +435,7 @@ function MessagingSection({
       hint="The company knowledge the AI sells from: positioning, objection handling, journeys and hard rules. This is injected into the system prompt of every conversation."
     >
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-[13px] text-gray-500">
+        <p className="text-[13px] text-muted">
           {gtm.custom != null ? (
             <span className="text-accent">Using custom messaging.</span>
           ) : (
@@ -507,15 +507,15 @@ function DeckCard({
     });
 
   return (
-    <div className="rounded-xl border border-line bg-panel-2/50">
+    <div className="rounded-xl border border-line bg-panel-2/40">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
-        <span className={`text-gray-500 transition ${open ? "rotate-90" : ""}`}>▸</span>
+        <span className={`text-muted transition ${open ? "rotate-90" : ""}`}>▸</span>
         <span className="font-medium">{title}</span>
-        <span className="text-[12px] text-gray-500">
+        <span className="text-[12px] text-muted">
           {item.assets.length} slides{item.edited && " · edited"}
         </span>
       </button>
@@ -599,7 +599,7 @@ function VideoCard({
   };
 
   return (
-    <form onSubmit={submit} className="rounded-xl border border-line bg-panel-2/50 p-4">
+    <form onSubmit={submit} className="rounded-xl border border-line bg-panel-2/40 p-4">
       <div className="grid grid-cols-[170px_1fr] gap-4">
         <video src={item.assets[0]} controls preload="metadata" className="w-full rounded border border-line" />
         <div className="space-y-3">
@@ -621,7 +621,7 @@ function VideoCard({
                 type="button"
                 onClick={remove}
                 disabled={save.state === "saving"}
-                className="rounded-full border border-red-500/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
+                className="rounded-full border border-red-800/30 px-4 py-2 text-sm text-red-800 transition hover:bg-red-800/5 disabled:opacity-50"
               >
                 Delete
               </button>
@@ -670,7 +670,7 @@ function VideoUpload({
         type="file"
         accept="video/mp4,video/webm"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        className="block text-sm text-gray-400 file:mr-3 file:rounded-full file:border-0 file:bg-panel-2 file:px-4 file:py-2 file:text-sm file:text-body"
+        className="block text-sm text-muted file:mr-3 file:rounded-full file:border-0 file:bg-panel-2 file:px-4 file:py-2 file:text-sm file:text-body"
       />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Title">
@@ -775,15 +775,15 @@ export default function SettingsPage() {
         <header className="relative flex items-center justify-center py-5">
           <Link
             to="/"
-            className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full border border-line px-4 py-2 text-sm text-gray-400 transition hover:border-accent/60 hover:text-accent"
+            className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full border border-line bg-panel px-4 py-2 text-sm text-muted transition hover:border-accent/50 hover:text-accent"
           >
             ← Back
           </Link>
           <WordmarkView className="text-2xl" />
         </header>
 
-        <h1 className="mb-1 text-3xl font-semibold">Settings</h1>
-        <p className="mb-6 text-sm text-gray-500">
+        <h1 className="mb-1.5 font-display text-4xl font-medium">Settings</h1>
+        <p className="mb-8 text-sm text-muted">
           Configure the brand, persona, messaging and content. Edits apply to new sessions.
         </p>
 
@@ -794,7 +794,7 @@ export default function SettingsPage() {
               setAdminToken(tokenInput.trim());
               load();
             }}
-            className="mb-6 flex items-end gap-3 rounded-2xl border border-accent/40 bg-panel p-5"
+            className="card mb-6 flex items-end gap-3 rounded-2xl border-accent/40 p-5"
           >
             <div className="flex-1">
               <Field label="This backend requires an admin token (ADMIN_TOKEN)">
@@ -813,12 +813,12 @@ export default function SettingsPage() {
           </form>
         )}
 
-        {loadError && <p className="mb-6 text-sm text-red-400">{loadError}</p>}
+        {loadError && <p className="mb-6 text-sm text-red-800">{loadError}</p>}
 
         {config && (
           <div className="space-y-6">
             {config.store === "memory" && (
-              <p className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-[13px] text-yellow-200/90">
+              <p className="rounded-xl border border-amber-700/25 bg-amber-600/10 px-4 py-3 text-[13px] leading-relaxed text-amber-900">
                 The backend is using the in-memory store — edits below are lost when it
                 restarts. Set MONGODB_URL to persist them. Uploaded files are saved to the
                 uploads directory either way (mount a persistent volume there in
@@ -848,7 +848,7 @@ export default function SettingsPage() {
                   />
                 ))
               ) : (
-                <p className="text-sm text-gray-500">No slide decks are loaded.</p>
+                <p className="text-sm text-muted">No slide decks are loaded.</p>
               )}
             </Section>
 
@@ -870,7 +870,7 @@ export default function SettingsPage() {
         )}
 
         {!config && !needToken && !loadError && (
-          <p className="text-sm text-gray-500">Loading…</p>
+          <p className="text-sm text-muted">Loading…</p>
         )}
       </div>
     </div>

@@ -29,12 +29,12 @@ export default function ChatPanel({ messages, topics, status, micDisclaimer, int
 
   return (
     <aside className="flex w-[380px] min-w-[300px] flex-col border-r border-line bg-panel">
-      <div className="border-b border-line px-5 py-3 text-center text-sm font-medium text-gray-300">
-        Chat
+      <div className="eyebrow border-b border-line px-5 py-3.5 text-center">
+        Conversation
       </div>
 
       <div ref={scrollRef} className="scroll-thin flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        <div className="rounded-xl border border-line bg-panel-2/60 px-4 py-3 text-[12px] leading-relaxed text-gray-400">
+        <div className="rounded-xl bg-panel-2/70 px-4 py-3 text-[12px] leading-relaxed text-muted">
           {micDisclaimer}
         </div>
         {messages.map((m) => (
@@ -47,7 +47,7 @@ export default function ChatPanel({ messages, topics, status, micDisclaimer, int
                 {[0, 1, 2].map((i) => (
                   <span
                     key={i}
-                    className="typing-dot h-1.5 w-1.5 rounded-full bg-gray-400"
+                    className="typing-dot h-1.5 w-1.5 rounded-full bg-muted"
                     style={{ animationDelay: `${i * 0.2}s` }}
                   />
                 ))}
@@ -64,7 +64,7 @@ export default function ChatPanel({ messages, topics, status, micDisclaimer, int
             value={interim || draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={interim ? "" : "Type here"}
-            className="flex-1 rounded-full border border-line bg-panel-2 px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 outline-none focus:border-accent/60"
+            className="flex-1 rounded-full border border-line bg-panel-2/70 px-4 py-2.5 text-sm text-body placeholder-muted/70 outline-none transition focus:border-accent/50 focus:bg-panel"
           />
           <button
             type="submit"

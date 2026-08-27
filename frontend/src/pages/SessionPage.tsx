@@ -84,9 +84,9 @@ export default function SessionPage() {
 
   if (state.phase === "gone") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
-        <p className="text-gray-300">This session has expired.</p>
-        <Link to="/" className="rounded-full bg-accent px-6 py-2.5 font-semibold text-ink">
+      <div className="flex h-full flex-col items-center justify-center gap-5">
+        <p className="font-display text-2xl text-body">This session has expired.</p>
+        <Link to="/" className="rounded-full bg-accent px-6 py-2.5 font-semibold text-ink transition hover:bg-accent-dim">
           Start a new conversation
         </Link>
       </div>
@@ -99,11 +99,11 @@ export default function SessionPage() {
     <div className="flex h-full flex-col">
       {state.phase === "boot" && <LoadingScreen label={`Waking up ${persona?.name ?? "your guide"}…`} />}
 
-      <header className="flex items-center justify-center py-4">
+      <header className="flex items-center justify-center py-5">
         <Wordmark className="text-xl" />
       </header>
 
-      <main className="mx-auto mb-5 flex w-[min(1280px,96vw)] flex-1 flex-col overflow-hidden rounded-3xl border border-accent/60 bg-panel shadow-[0_0_60px_-20px_var(--color-accent)]">
+      <main className="card mx-auto mb-6 flex w-[min(1280px,96vw)] flex-1 flex-col overflow-hidden rounded-3xl">
         <div className="flex min-h-0 flex-1">
           <ChatPanel
             messages={state.messages}
@@ -138,9 +138,9 @@ export default function SessionPage() {
               )}
             </div>
             {!state.media && persona && (
-              <div className="pointer-events-none absolute bottom-8 text-center">
-                <p className="text-lg font-semibold">{persona.name}</p>
-                <p className="text-sm text-gray-400">{persona.tagline}</p>
+              <div className="pointer-events-none absolute bottom-9 text-center">
+                <p className="font-display text-xl font-medium text-body">{persona.name}</p>
+                <p className="mt-1 text-[13px] tracking-wide text-muted">{persona.tagline}</p>
               </div>
             )}
 
@@ -163,7 +163,7 @@ export default function SessionPage() {
             )}
 
             {state.connection !== "open" && state.phase === "ready" && (
-              <div className="absolute top-4 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-4 py-1 text-xs text-yellow-200">
+              <div className="glass absolute top-4 rounded-full px-4 py-1 text-xs text-atlantic">
                 Reconnecting…
               </div>
             )}

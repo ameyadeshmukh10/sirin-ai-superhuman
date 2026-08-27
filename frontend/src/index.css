@@ -1,27 +1,35 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand palette — the single color seam for the whole app.
+  /* Sirin brand palette — the single color seam for the whole app.
      backend/scripts/generate_placeholder_slides.py parses this block, so keep
-     the `--color-name: #hex;` format (one per line). */
-  --color-accent: #a57c4f; /* primary brand color; must keep ink legible on bg-accent */
-  --color-accent-dim: #8a6640; /* accent hover state */
-  --color-accent-soft: #f6eee3; /* user chat-bubble text on accent/15 */
-  --color-accent-soft-2: #edddc6; /* topic-chip text */
-  --color-ink: #17191a; /* page background; button text on accent */
-  --color-panel: #202124;
-  --color-panel-2: #292b2f;
-  --color-line: #34363b;
-  --color-body: #f8f6f1; /* default text */
-  --color-muted: #a9b69c; /* slide bullet text (used by the slide script) */
-  --color-scrollbar: #2e3136;
-  --color-stage-from: #2a3127; /* stage backdrop radial gradient */
-  --color-stage-to: #141619;
-  --color-orb-glow: #d6b99022; /* fallback avatar orb */
-  --color-orb-1: #6e5335;
-  --color-orb-2: #382a1c;
-  --font-brand: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+     the `--color-name: #hex;` format (one per line).
+     Brand kit: Bone White #F7F5EF · Charcoal #1E1F20 · Slate #5E6464 ·
+     Moss #64715C · Weathered Stone #CFCAC0 · Deep Atlantic #2D4757 ·
+     Bronze #8C7354 */
+  --color-accent: #8c7354; /* Bronze — primary brand color; ink text stays legible on bg-accent */
+  --color-accent-dim: #7a6247; /* accent hover state */
+  --color-accent-soft: #5c4a33; /* user chat-bubble text on accent/10 */
+  --color-accent-soft-2: #6b5741; /* topic-chip text */
+  --color-ink: #f7f5ef; /* Bone White — page background; button text on bg-accent */
+  --color-panel: #fdfcf9; /* raised card surface */
+  --color-panel-2: #efece3; /* inputs, bubbles, inset surfaces */
+  --color-line: #ddd8cc; /* hairline borders */
+  --color-body: #1e1f20; /* Charcoal — default text */
+  --color-muted: #5e6464; /* Slate — secondary text */
+  --color-scrollbar: #cfcac0; /* Weathered Stone */
+  --color-stage-from: #faf8f3; /* stage backdrop radial gradient */
+  --color-stage-to: #edeade;
+  --color-orb-glow: #8c735426; /* fallback avatar orb */
+  --color-orb-1: #d9d3c6;
+  --color-orb-2: #c2bba9;
+  --color-stone: #cfcac0; /* Weathered Stone */
+  --color-moss: #64715c; /* Moss — positive/quiet emphasis */
+  --color-atlantic: #2d4757; /* Deep Atlantic — links, cool emphasis */
+  --font-brand: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Source Serif 4", "Iowan Old Style", Georgia, "Times New Roman",
+    serif;
 }
 
 html,
@@ -31,16 +39,47 @@ body,
   background: var(--color-ink);
   color: var(--color-body);
   font-family: var(--font-brand);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+/* One quiet elevation treatment for raised cards — no glows. */
+.card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  box-shadow:
+    0 1px 2px rgb(30 31 32 / 0.03),
+    0 8px 24px -18px rgb(30 31 32 / 0.12);
+}
+
+/* Restrained glass for surfaces that float above content. */
+.glass {
+  background: color-mix(in srgb, var(--color-panel) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--color-line);
+}
+
+/* Small-caps section label, as on sirin-ai.com. */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }
 
 .stage-backdrop {
-  background: radial-gradient(ellipse at center, var(--color-stage-from) 0%, var(--color-stage-to) 70%);
+  background: radial-gradient(ellipse at center, var(--color-stage-from) 0%, var(--color-stage-to) 78%);
 }
 
 .orb-fill {
   background:
     radial-gradient(circle at 35% 30%, var(--color-orb-glow) 0%, transparent 45%),
-    linear-gradient(140deg, var(--color-orb-1) 0%, var(--color-orb-2) 55%, var(--color-ink) 100%);
+    linear-gradient(140deg, var(--color-orb-1) 0%, var(--color-orb-2) 60%, var(--color-stone) 100%);
 }
 
 @keyframes ringPulse {
