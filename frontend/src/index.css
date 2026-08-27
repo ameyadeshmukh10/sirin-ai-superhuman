@@ -26,10 +26,10 @@
   --color-stone: #cfcac0; /* Weathered Stone */
   --color-moss: #64715c; /* Moss — positive/quiet emphasis */
   --color-atlantic: #2d4757; /* Deep Atlantic — links, cool emphasis */
-  --font-brand: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Source Serif 4", "Iowan Old Style", Georgia, "Times New Roman",
-    serif;
+  --font-brand: "Inter", -apple-system, "BlinkMacSystemFont", "Segoe UI",
+    "Roboto", "Helvetica Neue", "Arial", sans-serif;
+  --font-display: "Source Serif 4", "Iowan Old Style", "Georgia",
+    "Times New Roman", serif;
 }
 
 html,
@@ -46,30 +46,34 @@ body,
   background: color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
-/* One quiet elevation treatment for raised cards — no glows. */
-.card {
-  background: var(--color-panel);
-  border: 1px solid var(--color-line);
-  box-shadow:
-    0 1px 2px rgb(30 31 32 / 0.03),
-    0 8px 24px -18px rgb(30 31 32 / 0.12);
-}
+/* In the components layer so Tailwind utilities can still override
+   individual properties (e.g. border-accent/40 on a .card). */
+@layer components {
+  /* One quiet elevation treatment for raised cards — no glows. */
+  .card {
+    background: var(--color-panel);
+    border: 1px solid var(--color-line);
+    box-shadow:
+      0 1px 2px rgb(30 31 32 / 0.03),
+      0 8px 24px -18px rgb(30 31 32 / 0.12);
+  }
 
-/* Restrained glass for surfaces that float above content. */
-.glass {
-  background: color-mix(in srgb, var(--color-panel) 82%, transparent);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border: 1px solid var(--color-line);
-}
+  /* Restrained glass for surfaces that float above content. */
+  .glass {
+    background: color-mix(in srgb, var(--color-panel) 82%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--color-line);
+  }
 
-/* Small-caps section label, as on sirin-ai.com. */
-.eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--color-muted);
+  /* Small-caps section label, as on sirin-ai.com. */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
 }
 
 .stage-backdrop {

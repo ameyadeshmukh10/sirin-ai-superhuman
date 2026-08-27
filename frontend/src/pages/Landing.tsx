@@ -54,8 +54,8 @@ export default function Landing() {
         </Link>
       </header>
 
-      <main className="card mx-auto mb-8 flex w-[min(1200px,94vw)] flex-1 overflow-hidden rounded-3xl">
-        <section className="flex w-[44%] min-w-[340px] flex-col justify-center px-14 py-16">
+      <main className="card mx-auto mb-8 flex w-[min(1200px,94vw)] flex-1 flex-col overflow-hidden rounded-3xl lg:flex-row">
+        <section className="flex min-w-0 flex-col justify-center px-8 py-12 sm:px-14 sm:py-16 lg:w-[44%] lg:min-w-[340px]">
           <p className="eyebrow mb-6">Meet your guide</p>
 
           <h1 className="font-display text-[3.4rem] font-medium leading-[1.08] tracking-[-0.01em]">
@@ -89,7 +89,7 @@ export default function Landing() {
           </p>
         </section>
 
-        <section className="stage-backdrop relative flex flex-1 items-center justify-center border-l border-line">
+        <section className="stage-backdrop relative flex min-h-[300px] flex-1 items-center justify-center border-t border-line lg:border-l lg:border-t-0">
           <PersonaVisual name={name} imageUrl={persona?.image_url} speaking={false} size={340} />
         </section>
       </main>

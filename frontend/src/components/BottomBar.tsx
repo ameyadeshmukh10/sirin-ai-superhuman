@@ -20,20 +20,20 @@ export default function BottomBar(props: Props) {
   const { brand } = useBrand();
 
   return (
-    <div className="flex items-center justify-between border-t border-line bg-panel px-6 py-3.5">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t border-line bg-panel px-4 py-3.5 sm:px-6">
       <a
         href={brand.bookMeetingUrl}
         target="_blank"
         rel="noreferrer"
         onClick={onBookMeeting}
-        className={`rounded-full px-6 py-2.5 text-[15px] font-semibold text-ink transition ${
+        className={`rounded-full px-5 py-2.5 text-[15px] font-semibold text-ink transition sm:px-6 ${
           ctaHighlight ? "bg-atlantic hover:bg-atlantic/90" : "bg-accent hover:bg-accent-dim"
         }`}
       >
         Book a Meeting
       </a>
 
-      <div className="flex items-center gap-8">
+      <div className="flex items-center gap-5 sm:gap-8">
         {micSupported && (
           <ControlButton
             label="Mic"
