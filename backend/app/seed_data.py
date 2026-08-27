@@ -11,7 +11,7 @@ underneath. Override keys: "persona" (field overrides), "content:<id>" (field
 overrides for seeded items), "video:<id>" ({"doc": ...} for uploaded videos).
 """
 
-from .config import CONTENT_DIR, settings
+from .config import CONTENT_DIR, UPLOADS_DIR, asset_file, settings
 
 # Persona fields the settings view may override; everything else stays code-owned.
 PERSONA_EDITABLE_FIELDS = {
@@ -48,7 +48,7 @@ PERSONA = {
         "to start a conversation, Sage can walk you through it."
     ),
     "voice_id": settings.elevenlabs_voice_id,
-    "image_path": None,  # set automatically at seed time if backend/content/persona.* exists
+    "image_path": None,  # set at seed time from uploads/persona.* or content/persona.*
     "greeting": (
         "Hi, I'm Sage, your guide to Sirin AI. Sirin designs, deploys and manages "
         "custom AI agents — with the interfaces, integrations and ongoing support that "
@@ -198,10 +198,17 @@ async def seed(store) -> None:
     overrides = await store.list_overrides()
 
     persona = dict(PERSONA)
-    for ext in ("jpg", "jpeg", "png", "webp"):
-        if (CONTENT_DIR / f"persona.{ext}").exists():
-            persona["image_path"] = f"/content/persona.{ext}"
-            break
+    # a photo uploaded via the settings view (UPLOADS_DIR, usually on a
+    # persistence volume) wins over a persona image committed to the repo
+    persona["image_path"] = next(
+        (
+            f"{prefix}/persona.{ext}"
+            for root, prefix in ((UPLOADS_DIR, "/uploads"), (CONTENT_DIR, "/content"))
+            for ext in ("jpg", "jpeg", "png", "webp")
+            if (root / f"persona.{ext}").exists()
+        ),
+        None,
+    )
     _apply_override(persona, overrides.get("persona"), PERSONA_EDITABLE_FIELDS)
     await store.upsert_persona(persona)
 
@@ -252,8 +259,9 @@ async def seed(store) -> None:
             continue
         doc = override.get("doc") or {}
         assets = doc.get("assets") or []
-        asset_rel = assets[0].removeprefix("/content/") if assets else None
-        if asset_rel and (CONTENT_DIR / asset_rel).exists():
+        # asset_file handles both /uploads/ and legacy /content/ video paths
+        asset_path = asset_file(assets[0]) if assets else None
+        if asset_path is not None and asset_path.exists():
             seeded_ids.add(doc["_id"])
             await store.upsert_content_item(dict(doc))
         else:

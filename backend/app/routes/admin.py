@@ -4,7 +4,9 @@ Edits are written twice: onto the live store docs (so they apply immediately)
 and into override documents that seed_data.seed() re-applies on startup — with
 MongoDB configured, edits survive restarts; with the in-memory store they last
 until restart, like everything else. Uploaded files (logo, persona image,
-videos) are saved under backend/content/ and served from /content.
+videos) are saved under UPLOADS_DIR (backend/uploads by default — mount a
+persistence volume there in production) and served from /uploads; repo-baked
+assets stay under backend/content/ and /content.
 
 When ADMIN_TOKEN is set, every route here requires it in an X-Admin-Token
 header; unset means open access (local dev).
@@ -20,7 +22,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from ..config import CONTENT_DIR, settings
+from ..config import UPLOADS_DIR, asset_file, settings
 from ..orchestrator.prompt import GTM_KNOWLEDGE
 from ..seed_data import CONTENT_EDITABLE_FIELDS, PERSONA, PERSONA_EDITABLE_FIELDS, seed
 from ..store import get_store
@@ -166,8 +168,8 @@ def _file_ext(filename: str | None, allowed: set[str]) -> str:
 
 
 async def _save_upload(upload: UploadFile, dest_rel: str, max_bytes: int) -> None:
-    """Stream an upload to CONTENT_DIR/dest_rel, enforcing the size cap."""
-    dest = CONTENT_DIR / dest_rel
+    """Stream an upload to UPLOADS_DIR/dest_rel, enforcing the size cap."""
+    dest = UPLOADS_DIR / dest_rel
     dest.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     try:
@@ -186,8 +188,8 @@ async def _save_upload(upload: UploadFile, dest_rel: str, max_bytes: int) -> Non
 
 
 def _remove_matching(pattern: str, subdir: str = "") -> None:
-    """Delete files matching a glob pattern under CONTENT_DIR (or a subdir of it)."""
-    base = CONTENT_DIR / subdir if subdir else CONTENT_DIR
+    """Delete files matching a glob pattern under UPLOADS_DIR (or a subdir of it)."""
+    base = UPLOADS_DIR / subdir if subdir else UPLOADS_DIR
     if base.exists():
         for path in base.glob(pattern):
             path.unlink(missing_ok=True)
@@ -245,11 +247,11 @@ async def upload_persona_image(file: UploadFile = File(...)):
     tmp_rel = f".persona-upload-{uuid.uuid4().hex[:8]}{ext}"
     await _save_upload(file, tmp_rel, MAX_IMAGE_BYTES)
     _remove_matching("persona.*")
-    (CONTENT_DIR / tmp_rel).rename(CONTENT_DIR / f"persona{ext}")
+    (UPLOADS_DIR / tmp_rel).rename(UPLOADS_DIR / f"persona{ext}")
 
     store = get_store()
     persona = await _get_persona_or_500()
-    persona["image_path"] = f"/content/persona{ext}"
+    persona["image_path"] = f"/uploads/persona{ext}"
     await store.upsert_persona(persona)
     return {"image_url": persona["image_path"]}
 
@@ -264,9 +266,9 @@ async def update_brand(body: BrandUpdate):
     override = await store.get_override("brand") or {}
     if body.wordmark is not None:
         if isinstance(body.wordmark, WordmarkLogo) and not body.wordmark.src.startswith(
-            "/content/"
+            ("/uploads/", "/content/")  # /content/ kept for pre-volume overrides
         ):
-            raise HTTPException(422, "logo src must be an uploaded /content/ path")
+            raise HTTPException(422, "logo src must be an uploaded /uploads/ path")
         override["wordmark"] = body.wordmark.model_dump(exclude_none=True)
     if body.book_meeting_url is not None:
         url = body.book_meeting_url.strip()
@@ -292,14 +294,14 @@ async def upload_logo(file: UploadFile = File(...)):
     await _save_upload(file, f"branding/{name}", MAX_IMAGE_BYTES)
     # only after the new file is safely on disk, drop the previous logo files
     # (a failed upload must never leave the current logo deleted)
-    for path in (CONTENT_DIR / "branding").glob("logo-*.*"):
+    for path in (UPLOADS_DIR / "branding").glob("logo-*.*"):
         if path.name != name:
             path.unlink(missing_ok=True)
 
     store = get_store()
     override = await store.get_override("brand") or {}
     alt = (override.get("wordmark") or {}).get("alt") or PERSONA.get("company") or "logo"
-    override["wordmark"] = {"kind": "logo", "src": f"/content/branding/{name}", "alt": alt}
+    override["wordmark"] = {"kind": "logo", "src": f"/uploads/branding/{name}", "alt": alt}
     await store.set_override("brand", override)
     return {"brand": override}
 
@@ -383,7 +385,7 @@ async def upload_video(
         "type": "video",
         "title": title_clean,
         "description": description_clean,
-        "assets": [f"/content/videos/{item_id}{ext}"],
+        "assets": [f"/uploads/videos/{item_id}{ext}"],
     }
     store = get_store()
     await store.upsert_content_item(doc)
@@ -399,9 +401,9 @@ async def delete_content(item_id: str):
     if override is None:
         raise HTTPException(422, "only videos uploaded via settings can be deleted")
     for asset in (override.get("doc") or {}).get("assets") or []:
-        rel = asset.removeprefix("/content/")
-        path = (CONTENT_DIR / rel).resolve()
-        if path.is_relative_to(CONTENT_DIR.resolve()):
+        # asset_file handles both /uploads/ and legacy /content/ video paths
+        path = asset_file(asset)
+        if path is not None:
             path.unlink(missing_ok=True)
     await store.delete_override(f"video:{item_id}")
     await store.delete_content_item(item_id)

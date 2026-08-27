@@ -821,7 +821,8 @@ export default function SettingsPage() {
               <p className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-[13px] text-yellow-200/90">
                 The backend is using the in-memory store — edits below are lost when it
                 restarts. Set MONGODB_URL to persist them. Uploaded files are saved to the
-                server's disk either way.
+                uploads directory either way (mount a persistent volume there in
+                production to keep them across redeploys).
               </p>
             )}
 
