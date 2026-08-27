@@ -640,10 +640,13 @@ async def delete_content(item_id: str):
         path = asset_file(asset)
         if path is not None:
             path.unlink(missing_ok=True)
-    # uploaded decks own a directory; remove it once its slides are gone
+    # uploaded decks own a directory; remove it once its slides are gone.
+    # cleanup errors propagate BEFORE the records go: a failed delete stays
+    # retryable, and if it never is, the next seed() heals it (missing assets
+    # → the orphan branch drops the override and sweeps the directory)
     deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
-    if deck_dir.is_relative_to(UPLOADS_DIR.resolve()):
-        shutil.rmtree(deck_dir, ignore_errors=True)
+    if deck_dir.is_relative_to(UPLOADS_DIR.resolve()) and deck_dir.is_dir():
+        shutil.rmtree(deck_dir)
     await store.delete_override(f"{prefix}{item_id}")
     await store.delete_content_item(item_id)
     return {"content": await _content_with_flags()}
