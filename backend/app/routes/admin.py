@@ -35,6 +35,7 @@ RESETTABLE_KEYS = {"persona", "brand", "gtm"}
 
 
 def require_admin(request: Request) -> None:
+    """Gate /api/admin/*: when ADMIN_TOKEN is set, require it in X-Admin-Token."""
     if settings.admin_token and not secrets.compare_digest(
         request.headers.get("x-admin-token", ""), settings.admin_token
     ):
@@ -93,6 +94,7 @@ class ContentUpdate(BaseModel):
 
 
 def _admin_persona(persona: dict) -> dict:
+    """Shape a stored persona doc into the settings view's editable payload."""
     return {
         "id": persona["_id"],
         "image_url": persona.get("image_path"),
@@ -101,6 +103,7 @@ def _admin_persona(persona: dict) -> dict:
 
 
 async def _get_persona_or_500() -> dict:
+    """Return the seeded persona doc, or fail loudly if seeding never ran."""
     persona = await get_store().get_persona(PERSONA["_id"])
     if persona is None:
         raise HTTPException(500, "persona not seeded")
@@ -108,6 +111,7 @@ async def _get_persona_or_500() -> dict:
 
 
 async def _content_with_flags() -> list[dict]:
+    """List content items with custom/edited flags derived from their overrides."""
     store = get_store()
     overrides = await store.list_overrides()
     items = []
@@ -129,6 +133,7 @@ async def _content_with_flags() -> list[dict]:
 
 
 async def _config() -> dict:
+    """Assemble the full settings payload served by GET /api/admin/config."""
     store = get_store()
     gtm = await store.get_override("gtm") or {}
     return {
@@ -141,6 +146,7 @@ async def _config() -> dict:
 
 
 def _clean_str(value: str | None, max_len: int = 4000) -> str | None:
+    """Strip a string field; None/blank means 'not provided', too long is a 422."""
     if value is None:
         return None
     value = value.strip()
@@ -152,6 +158,7 @@ def _clean_str(value: str | None, max_len: int = 4000) -> str | None:
 
 
 def _file_ext(filename: str | None, allowed: set[str]) -> str:
+    """Return the lowercased extension of an upload, rejecting types not allowed."""
     ext = ("." + filename.rsplit(".", 1)[-1].lower()) if filename and "." in filename else ""
     if ext not in allowed:
         raise HTTPException(422, f"unsupported file type; allowed: {', '.join(sorted(allowed))}")
@@ -179,6 +186,7 @@ async def _save_upload(upload: UploadFile, dest_rel: str, max_bytes: int) -> Non
 
 
 def _remove_matching(pattern: str, subdir: str = "") -> None:
+    """Delete files matching a glob pattern under CONTENT_DIR (or a subdir of it)."""
     base = CONTENT_DIR / subdir if subdir else CONTENT_DIR
     if base.exists():
         for path in base.glob(pattern):
@@ -190,6 +198,7 @@ def _remove_matching(pattern: str, subdir: str = "") -> None:
 
 @router.get("/config")
 async def get_config():
+    """Return everything the settings view edits: persona, brand, GTM, content."""
     return await _config()
 
 
@@ -198,6 +207,7 @@ async def get_config():
 
 @router.put("/persona")
 async def update_persona(body: PersonaUpdate):
+    """Update persona fields on the live doc and persist them as overrides."""
     store = get_store()
     fields: dict = {}
     for key in ("name", "company", "website", "tagline", "voice_id"):
@@ -228,10 +238,14 @@ async def update_persona(body: PersonaUpdate):
 
 @router.post("/persona/image")
 async def upload_persona_image(file: UploadFile = File(...)):
+    """Replace the persona photo; seed() auto-detects persona.<ext> on startup."""
     ext = _file_ext(file.filename, IMAGE_EXTS)
-    # seed() auto-detects persona.<ext>, so keep the fixed name and drop siblings
+    # write to a temp name first so a failed upload can't destroy the current
+    # photo; the leading dot keeps it out of the persona.* seed detection
+    tmp_rel = f".persona-upload-{uuid.uuid4().hex[:8]}{ext}"
+    await _save_upload(file, tmp_rel, MAX_IMAGE_BYTES)
     _remove_matching("persona.*")
-    await _save_upload(file, f"persona{ext}", MAX_IMAGE_BYTES)
+    (CONTENT_DIR / tmp_rel).rename(CONTENT_DIR / f"persona{ext}")
 
     store = get_store()
     persona = await _get_persona_or_500()
@@ -245,6 +259,7 @@ async def upload_persona_image(file: UploadFile = File(...)):
 
 @router.put("/brand")
 async def update_brand(body: BrandUpdate):
+    """Update the wordmark and/or book-a-meeting URL override."""
     store = get_store()
     override = await store.get_override("brand") or {}
     if body.wordmark is not None:
@@ -270,11 +285,16 @@ async def update_brand(body: BrandUpdate):
 
 @router.post("/brand/logo")
 async def upload_logo(file: UploadFile = File(...)):
+    """Upload a logo file and switch the wordmark to it."""
     ext = _file_ext(file.filename, LOGO_EXTS)
     # unique name so browsers never serve a stale cached logo
     name = f"logo-{uuid.uuid4().hex[:8]}{ext}"
-    _remove_matching("logo-*.*", "branding")
     await _save_upload(file, f"branding/{name}", MAX_IMAGE_BYTES)
+    # only after the new file is safely on disk, drop the previous logo files
+    # (a failed upload must never leave the current logo deleted)
+    for path in (CONTENT_DIR / "branding").glob("logo-*.*"):
+        if path.name != name:
+            path.unlink(missing_ok=True)
 
     store = get_store()
     override = await store.get_override("brand") or {}
@@ -289,6 +309,7 @@ async def upload_logo(file: UploadFile = File(...)):
 
 @router.put("/gtm")
 async def update_gtm(body: GtmUpdate):
+    """Set custom GTM knowledge for new sessions; blank text resets to default."""
     store = get_store()
     text = (body.text or "").strip()
     if text:
@@ -303,6 +324,7 @@ async def update_gtm(body: GtmUpdate):
 
 @router.put("/content/{item_id}")
 async def update_content(item_id: str, body: ContentUpdate):
+    """Edit a content item's title, description, or presenter notes."""
     store = get_store()
     items = {i["_id"]: i for i in await store.list_content_items()}
     item = items.get(item_id)
@@ -345,6 +367,7 @@ async def upload_video(
     title: str = Form(...),
     description: str = Form(...),
 ):
+    """Save an uploaded clip and register it as a play_video content item."""
     title_clean = _clean_str(title, max_len=200)
     description_clean = _clean_str(description)
     if not title_clean or not description_clean:
@@ -370,6 +393,7 @@ async def upload_video(
 
 @router.delete("/content/{item_id}")
 async def delete_content(item_id: str):
+    """Delete a video uploaded via settings, including its file on disk."""
     store = get_store()
     override = await store.get_override(f"video:{item_id}")
     if override is None:
@@ -389,6 +413,7 @@ async def delete_content(item_id: str):
 
 @router.delete("/overrides/{key}")
 async def reset_override(key: str):
+    """Drop one override and re-seed so the code defaults come back."""
     if key not in RESETTABLE_KEYS and not key.startswith("content:"):
         raise HTTPException(422, "unknown override key")
     store = get_store()

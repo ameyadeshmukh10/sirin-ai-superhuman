@@ -31,8 +31,13 @@ function useSave(onAuthNeeded: () => void) {
   const [state, setState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  const busy = useRef(false);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const run = async (action: () => Promise<void>) => {
+    // one in-flight action per section: a save, reset, upload or delete that
+    // overlaps another could apply out of order and leave stale state behind
+    if (busy.current) return;
+    busy.current = true;
     setState("saving");
     setError(null);
     try {
@@ -47,6 +52,8 @@ function useSave(onAuthNeeded: () => void) {
       } else {
         setError(err instanceof Error ? err.message : "Request failed.");
       }
+    } finally {
+      busy.current = false;
     }
   };
   return { state, error, run };
@@ -223,7 +230,12 @@ function BrandSection({
             ) : (
               <p className="text-sm text-gray-500">No logo uploaded yet.</p>
             )}
-            <FilePicker label={logoSrc ? "Replace logo…" : "Upload logo…"} accept="image/*,.svg" onPick={uploadLogo} />
+            <FilePicker
+              label={logoSrc ? "Replace logo…" : "Upload logo…"}
+              accept="image/*,.svg"
+              onPick={uploadLogo}
+              disabled={save.state === "saving"}
+            />
             <div className="flex-1">
               <Field label="Alt text">
                 <input value={alt} onChange={(e) => setAlt(e.target.value)} className={inputCls} />
@@ -238,7 +250,12 @@ function BrandSection({
 
         <div className="flex items-center gap-3">
           <SaveButton state={save.state} />
-          <button type="button" onClick={reset} className={btnGhostCls}>
+          <button
+            type="button"
+            onClick={reset}
+            disabled={save.state === "saving"}
+            className={btnGhostCls}
+          >
             Reset to defaults
           </button>
           <ErrorText error={save.error} />
@@ -329,6 +346,7 @@ function PersonaSection({
           label={persona.image_url ? "Replace photo…" : "Upload photo…"}
           accept="image/png,image/jpeg,image/webp"
           onPick={uploadImage}
+          disabled={save.state === "saving"}
         />
       </div>
 
@@ -366,7 +384,12 @@ function PersonaSection({
         </Field>
         <div className="flex items-center gap-3">
           <SaveButton state={save.state} />
-          <button type="button" onClick={reset} className={btnGhostCls}>
+          <button
+            type="button"
+            onClick={reset}
+            disabled={save.state === "saving"}
+            className={btnGhostCls}
+          >
             Reset to defaults
           </button>
           <ErrorText error={save.error} />
@@ -427,7 +450,12 @@ function MessagingSection({
         />
         <div className="flex items-center gap-3">
           <SaveButton state={save.state} />
-          <button type="button" onClick={reset} className={btnGhostCls}>
+          <button
+            type="button"
+            onClick={reset}
+            disabled={save.state === "saving"}
+            className={btnGhostCls}
+          >
             Reset to default
           </button>
           <ErrorText error={save.error} />
@@ -523,7 +551,12 @@ function DeckCard({
           </div>
           <div className="flex items-center gap-3">
             <SaveButton state={save.state} />
-            <button type="button" onClick={reset} className={btnGhostCls} disabled={!item.edited}>
+            <button
+              type="button"
+              onClick={reset}
+              className={btnGhostCls}
+              disabled={!item.edited || save.state === "saving"}
+            >
               Reset to defaults
             </button>
             <ErrorText error={save.error} />
@@ -587,7 +620,8 @@ function VideoCard({
               <button
                 type="button"
                 onClick={remove}
-                className="rounded-full border border-red-500/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
+                disabled={save.state === "saving"}
+                className="rounded-full border border-red-500/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
               >
                 Delete
               </button>
@@ -664,15 +698,22 @@ function FilePicker({
   label,
   accept,
   onPick,
+  disabled = false,
 }: {
   label: string;
   accept: string;
   onPick: (file: File) => void;
+  disabled?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <>
-      <button type="button" onClick={() => ref.current?.click()} className={btnGhostCls}>
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        disabled={disabled}
+        className={btnGhostCls}
+      >
         {label}
       </button>
       <input

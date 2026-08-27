@@ -36,6 +36,7 @@ ADMIN_MAX_BODY_BYTES = 210 * 1024 * 1024
 
 @app.middleware("http")
 async def admin_body_size_limit(request, call_next):
+    """Refuse oversized (or undeclared-length) admin write requests up front."""
     if request.url.path.startswith("/api/admin") and request.method in ("POST", "PUT", "PATCH"):
         length = request.headers.get("content-length")
         # browsers and standard clients always declare Content-Length; refuse
