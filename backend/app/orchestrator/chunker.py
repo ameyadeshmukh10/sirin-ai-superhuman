@@ -34,7 +34,9 @@ class SentenceChunker:
         self._buf = ""
 
     def feed(self, delta: str) -> list[str]:
-        """Process incoming text tokens and emit complete sentences ready for TTS."""
+        """Process incoming text deltas and emit sentence-sized chunks ready for
+        TTS — usually whole sentences, but a clause, space, or hard MAX_LEN cut
+        when no sentence boundary appears in time."""
         self._buf += delta
         out: list[str] = []
         while True:
@@ -54,7 +56,8 @@ class SentenceChunker:
         return cleaned or None
 
     def _find_boundary(self, text: str) -> int | None:
-        """Find the next sentence boundary position, or None if buffering more text is needed."""
+        """Find the next cut position — a sentence boundary, or a clause/space/
+        hard split once MAX_LEN is exceeded — or None to keep buffering."""
         for i, ch in enumerate(text):
             if ch not in ".!?":
                 continue

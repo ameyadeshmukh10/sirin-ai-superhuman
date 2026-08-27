@@ -167,7 +167,7 @@ class MongoStore:
         return await self.db.personas.find_one({"_id": persona_id})
 
     async def list_content_items(self) -> list[dict]:
-        """Return all content item documents as a list."""
+        """Return content item documents (capped at 200)."""
         return await self.db.content_items.find().to_list(length=200)
 
     async def create_session(self, persona_id: str, meta: dict | None = None) -> dict:
@@ -201,7 +201,7 @@ class MongoStore:
         )
 
     async def get_messages(self, session_id: str) -> list[dict]:
-        """Retrieve all messages for a session, ordered by timestamp."""
+        """Retrieve a session's messages, ordered by timestamp (capped at 500)."""
         return await self.db.messages.find({"session_id": session_id}).sort("ts", 1).to_list(
             length=500
         )

@@ -36,6 +36,7 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_VIDEO_BYTES = 200 * 1024 * 1024
 MAX_PDF_BYTES = 60 * 1024 * 1024
 MAX_DECK_SLIDES = 40
+MAX_RENDER_PIXELS = 4096 * 4096  # per rendered PDF page, pre-checked before rasterizing
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 LOGO_EXTS = IMAGE_EXTS | {".svg"}
 VIDEO_EXTS = {".mp4", ".webm"}
@@ -449,9 +450,10 @@ async def update_content(item_id: str, body: ContentUpdate):
     if not fields:
         raise HTTPException(422, "no fields to update")
 
+    # the override is the durable truth seed() restores from — write it first,
+    # so a failure after it leaves at worst a stale live item that the next
+    # startup heals, never a durable record that silently reverts the edit
     item.update(fields)
-    await store.upsert_content_item(item)
-
     for prefix in CUSTOM_CONTENT_PREFIXES:
         custom_override = await store.get_override(f"{prefix}{item_id}")
         if custom_override is not None:
@@ -463,6 +465,7 @@ async def update_content(item_id: str, body: ContentUpdate):
         override = await store.get_override(f"content:{item_id}") or {}
         override.update({k: v for k, v in fields.items() if k in CONTENT_EDITABLE_FIELDS})
         await store.set_override(f"content:{item_id}", override)
+    await store.upsert_content_item(item)
     return {"content": await _content_with_flags()}
 
 
@@ -483,6 +486,10 @@ def _render_pdf_to_slides(pdf_path: Path, dest_dir: Path) -> int:
         for number, page in enumerate(doc, start=1):
             # render to ~1600px wide; cap the zoom so tiny pages don't explode
             zoom = min(2.5, 1600 / max(1.0, page.rect.width))
+            # a pathological page geometry must not exhaust memory: bound the
+            # output pixel count before any pixmap is allocated
+            if (page.rect.width * zoom) * (page.rect.height * zoom) > MAX_RENDER_PIXELS:
+                raise ValueError(f"page {number} is too large to render")
             pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
             pix.save(dest_dir / f"{number:02d}.png")
         return doc.page_count
@@ -545,8 +552,23 @@ async def upload_deck(
         "presenter_notes": [],
     }
     store = get_store()
-    await store.upsert_content_item(doc)
-    await store.set_override(f"deck:{deck_id}", {"doc": doc})
+    try:
+        # override first — it is the durable record delete/seed key off
+        await store.set_override(f"deck:{deck_id}", {"doc": doc})
+        await store.upsert_content_item(doc)
+    except BaseException:
+        # a half-registered deck would be undeletable and unseedable: unwind
+        # everything, best-effort, before re-raising
+        for cleanup in (
+            lambda: store.delete_content_item(deck_id),
+            lambda: store.delete_override(f"deck:{deck_id}"),
+        ):
+            try:
+                await cleanup()
+            except Exception:
+                pass
+        shutil.rmtree(UPLOADS_DIR / "decks" / deck_id, ignore_errors=True)
+        raise
     return {"content": await _content_with_flags()}
 
 
@@ -575,8 +597,22 @@ async def upload_video(
         "assets": [f"/uploads/videos/{item_id}{ext}"],
     }
     store = get_store()
-    await store.upsert_content_item(doc)
-    await store.set_override(f"video:{item_id}", {"doc": doc})
+    try:
+        # override first — it is the durable record delete/seed key off
+        await store.set_override(f"video:{item_id}", {"doc": doc})
+        await store.upsert_content_item(doc)
+    except BaseException:
+        # unwind a half-registered video, best-effort, before re-raising
+        for cleanup in (
+            lambda: store.delete_content_item(item_id),
+            lambda: store.delete_override(f"video:{item_id}"),
+        ):
+            try:
+                await cleanup()
+            except Exception:
+                pass
+        (UPLOADS_DIR / "videos" / f"{item_id}{ext}").unlink(missing_ok=True)
+        raise
     return {"content": await _content_with_flags()}
 
 

@@ -262,9 +262,10 @@ async def seed(store) -> None:
             continue
         doc = override.get("doc") or {}
         assets = doc.get("assets") or []
-        # asset_file handles both /uploads/ and legacy /content/ paths
-        asset_path = asset_file(assets[0]) if assets else None
-        if asset_path is not None and asset_path.exists():
+        # asset_file handles both /uploads/ and legacy /content/ paths; every
+        # slide must still exist — a deck missing any file is an orphan
+        asset_paths = [asset_file(asset) for asset in assets]
+        if assets and all(path is not None and path.exists() for path in asset_paths):
             seeded_ids.add(doc["_id"])
             await store.upsert_content_item(dict(doc))
         else:
