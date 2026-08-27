@@ -31,6 +31,7 @@ CONTENT_EDITABLE_FIELDS = {"title", "description", "presenter_notes"}
 
 
 def _apply_override(doc: dict, override: dict | None, allowed: set[str]) -> dict:
+    """Apply override fields to a document, keeping only allowed field names."""
     if override:
         doc.update({k: v for k, v in override.items() if k in allowed})
     return doc
@@ -196,6 +197,7 @@ VIDEOS = []
 
 
 async def seed(store) -> None:
+    """Seed persona and content items into the store, applying any saved overrides."""
     overrides = await store.list_overrides()
 
     persona = dict(PERSONA)

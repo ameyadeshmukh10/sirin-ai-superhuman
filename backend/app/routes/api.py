@@ -7,6 +7,7 @@ router = APIRouter(prefix="/api")
 
 
 def _public_persona(persona: dict) -> dict:
+    """Transform a stored persona document into the public API shape."""
     return {
         "id": persona["_id"],
         "name": persona["name"],
@@ -20,11 +21,13 @@ def _public_persona(persona: dict) -> dict:
 
 @router.get("/health")
 async def health():
+    """Health check endpoint returning store type."""
     return {"ok": True, "store": get_store().kind}
 
 
 @router.get("/brand")
 async def get_brand():
+    """Return brand overrides set in the settings view, or empty object for defaults."""
     # Runtime brand overrides set in the settings view; the frontend merges
     # these over its static defaults in brand.ts. Empty object = defaults.
     return await get_store().get_override("brand") or {}
@@ -32,6 +35,7 @@ async def get_brand():
 
 @router.get("/persona")
 async def get_persona():
+    """Return the seeded persona in public API format."""
     persona = await get_store().get_persona(PERSONA["_id"])
     if persona is None:
         raise HTTPException(500, "persona not seeded")
@@ -40,6 +44,7 @@ async def get_persona():
 
 @router.post("/sessions")
 async def create_session():
+    """Create a new session and return its id with the persona."""
     store = get_store()
     persona = await store.get_persona(PERSONA["_id"])
     if persona is None:
@@ -51,6 +56,7 @@ async def create_session():
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
+    """Retrieve session details including status, persona, and message history."""
     store = get_store()
     session = await store.get_session(session_id)
     if session is None:
@@ -71,5 +77,6 @@ async def get_session(session_id: str):
 
 @router.get("/content")
 async def list_content():
+    """Return all available content items (slide decks and videos)."""
     items = await get_store().list_content_items()
     return {"items": items}

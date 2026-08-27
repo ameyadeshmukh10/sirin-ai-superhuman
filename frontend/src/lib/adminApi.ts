@@ -64,14 +64,23 @@ export class AdminAuthError extends Error {
 // full page reload.
 let adminToken = "";
 
+/**
+ * Get the current admin token from memory.
+ */
 export function getAdminToken(): string {
   return adminToken;
 }
 
+/**
+ * Store the admin token in memory for subsequent API requests.
+ */
 export function setAdminToken(token: string) {
   adminToken = token;
 }
 
+/**
+ * Make an authenticated request to the admin API, throwing on auth or HTTP errors.
+ */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const token = getAdminToken();
@@ -91,6 +100,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+/**
+ * Build a RequestInit for a JSON request with the given method and body.
+ */
 function json(method: string, body: unknown): RequestInit {
   return {
     method,
@@ -99,6 +111,9 @@ function json(method: string, body: unknown): RequestInit {
   };
 }
 
+/**
+ * Build a RequestInit for a multipart file upload with optional extra fields.
+ */
 function upload(file: File, extra: Record<string, string> = {}): RequestInit {
   const form = new FormData();
   form.append("file", file);

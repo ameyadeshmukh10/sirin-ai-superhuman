@@ -126,6 +126,7 @@ interruption as the conversation, not a detour from it.
 def build_system_prompt(
     persona: dict, content_items: list[dict], gtm_override: str | None = None
 ) -> str:
+    """Build the system prompt for Claude, combining persona, GTM knowledge, and content manifest."""
     manifest_lines = []
     for item in content_items:
         manifest_lines.append(

@@ -29,6 +29,9 @@ const btnGhostCls =
 
 type SaveState = "idle" | "saving" | "saved";
 
+/**
+ * Hook for managing save state and errors, ensuring one operation at a time.
+ */
 function useSave(onAuthNeeded: () => void) {
   const [state, setState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +64,9 @@ function useSave(onAuthNeeded: () => void) {
   return { state, error, run };
 }
 
+/**
+ * Submit button that shows saving/saved state.
+ */
 function SaveButton({ state, label = "Save" }: { state: SaveState; label?: string }) {
   return (
     <button type="submit" disabled={state === "saving"} className={btnCls}>
@@ -69,6 +75,9 @@ function SaveButton({ state, label = "Save" }: { state: SaveState; label?: strin
   );
 }
 
+/**
+ * Container section with title and optional hint text.
+ */
 function Section({
   title,
   hint,
@@ -87,6 +96,9 @@ function Section({
   );
 }
 
+/**
+ * Form field with label.
+ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -96,12 +108,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/**
+ * Display an error message if present.
+ */
 function ErrorText({ error }: { error: string | null }) {
   return error ? <p className="text-sm text-red-800">{error}</p> : null;
 }
 
 // ---------- brand ----------
 
+/**
+ * Section for managing brand settings (wordmark and book-a-meeting URL).
+ */
 function BrandSection({
   config,
   onConfig,
@@ -269,6 +287,9 @@ function BrandSection({
 
 // ---------- persona ----------
 
+/**
+ * Section for managing persona details (name, company, greeting, topics, etc).
+ */
 function PersonaSection({
   persona,
   onConfig,
@@ -403,6 +424,9 @@ function PersonaSection({
 
 // ---------- avatar ----------
 
+/**
+ * Section for browsing and selecting an avatar from the HeyGen catalog.
+ */
 function AvatarSection({
   avatar,
   onConfig,
@@ -611,6 +635,9 @@ function AvatarSection({
 
 // ---------- messaging (GTM knowledge) ----------
 
+/**
+ * Section for editing GTM knowledge that guides the AI's conversations.
+ */
 function MessagingSection({
   gtm,
   onConfig,
@@ -677,6 +704,9 @@ function MessagingSection({
 
 // ---------- content: slide decks ----------
 
+/**
+ * Expandable card for editing a slide deck's metadata and presenter notes.
+ */
 function DeckCard({
   item,
   onConfig,
@@ -872,6 +902,9 @@ function DeckUpload({
 
 // ---------- content: videos ----------
 
+/**
+ * Card for editing a video's title and description, with option to delete.
+ */
 function VideoCard({
   item,
   onConfig,
@@ -937,6 +970,9 @@ function VideoCard({
   );
 }
 
+/**
+ * Form for uploading a new video clip with title and description.
+ */
 function VideoUpload({
   onConfig,
   onAuthNeeded,
@@ -997,6 +1033,9 @@ function VideoUpload({
 
 // ---------- shared ----------
 
+/**
+ * Button that triggers a hidden file input and calls onPick when a file is selected.
+ */
 function FilePicker({
   label,
   accept,
@@ -1036,6 +1075,9 @@ function FilePicker({
 
 // ---------- page ----------
 
+/**
+ * Settings page for configuring brand, persona, avatar, messaging, and content.
+ */
 export default function SettingsPage() {
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [needToken, setNeedToken] = useState(false);
