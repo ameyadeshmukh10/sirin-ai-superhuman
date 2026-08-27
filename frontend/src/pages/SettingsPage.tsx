@@ -29,6 +29,9 @@ const btnGhostCls =
 
 type SaveState = "idle" | "saving" | "saved";
 
+/**
+ * Hook for managing save state and errors, ensuring one operation at a time.
+ */
 function useSave(onAuthNeeded: () => void) {
   const [state, setState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +64,9 @@ function useSave(onAuthNeeded: () => void) {
   return { state, error, run };
 }
 
+/**
+ * Submit button that shows saving/saved state.
+ */
 function SaveButton({ state, label = "Save" }: { state: SaveState; label?: string }) {
   return (
     <button type="submit" disabled={state === "saving"} className={btnCls}>
@@ -69,6 +75,9 @@ function SaveButton({ state, label = "Save" }: { state: SaveState; label?: strin
   );
 }
 
+/**
+ * Container section with title and optional hint text.
+ */
 function Section({
   title,
   hint,
@@ -87,6 +96,9 @@ function Section({
   );
 }
 
+/**
+ * Form field with label.
+ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -96,12 +108,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/**
+ * Display an error message if present.
+ */
 function ErrorText({ error }: { error: string | null }) {
   return error ? <p className="text-sm text-red-800">{error}</p> : null;
 }
 
 // ---------- brand ----------
 
+/**
+ * Section for managing brand settings (wordmark and book-a-meeting URL).
+ */
 function BrandSection({
   config,
   onConfig,
@@ -269,6 +287,9 @@ function BrandSection({
 
 // ---------- persona ----------
 
+/**
+ * Section for managing persona details (name, company, greeting, topics, etc).
+ */
 function PersonaSection({
   persona,
   onConfig,
@@ -403,6 +424,9 @@ function PersonaSection({
 
 // ---------- avatar ----------
 
+/**
+ * Section for browsing and selecting an avatar from the HeyGen catalog.
+ */
 function AvatarSection({
   avatar,
   onConfig,
@@ -611,6 +635,9 @@ function AvatarSection({
 
 // ---------- messaging (GTM knowledge) ----------
 
+/**
+ * Section for editing GTM knowledge that guides the AI's conversations.
+ */
 function MessagingSection({
   gtm,
   onConfig,
@@ -677,6 +704,9 @@ function MessagingSection({
 
 // ---------- content: slide decks ----------
 
+/**
+ * Expandable card for editing a slide deck's metadata and presenter notes.
+ */
 function DeckCard({
   item,
   onConfig,
@@ -716,6 +746,14 @@ function DeckCard({
       }
     });
 
+  const remove = () => {
+    if (!window.confirm(`Delete “${item.title}” and its slides? This can't be undone.`)) return;
+    save.run(async () => {
+      const res = await adminApi.deleteContent(item.id);
+      onConfig({ content: res.content });
+    });
+  };
+
   return (
     <div className="rounded-xl border border-line bg-panel-2/40">
       <button
@@ -726,7 +764,8 @@ function DeckCard({
         <span className={`text-muted transition ${open ? "rotate-90" : ""}`}>▸</span>
         <span className="font-medium">{title}</span>
         <span className="text-[12px] text-muted">
-          {item.assets.length} slides{item.edited && " · edited"}
+          {item.assets.length} slides
+          {item.custom ? " · uploaded" : item.edited ? " · edited" : ""}
         </span>
       </button>
       {open && (
@@ -761,14 +800,25 @@ function DeckCard({
           </div>
           <div className="flex items-center gap-3">
             <SaveButton state={save.state} />
-            <button
-              type="button"
-              onClick={reset}
-              className={btnGhostCls}
-              disabled={!item.edited || save.state === "saving"}
-            >
-              Reset to defaults
-            </button>
+            {item.custom ? (
+              <button
+                type="button"
+                onClick={remove}
+                disabled={save.state === "saving"}
+                className="rounded-full border border-red-800/30 px-4 py-2 text-sm text-red-800 transition hover:bg-red-800/5 disabled:opacity-50"
+              >
+                Delete deck
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={reset}
+                className={btnGhostCls}
+                disabled={!item.edited || save.state === "saving"}
+              >
+                Reset to defaults
+              </button>
+            )}
             <ErrorText error={save.error} />
           </div>
         </form>
@@ -777,8 +827,84 @@ function DeckCard({
   );
 }
 
+function DeckUpload({
+  onConfig,
+  onAuthNeeded,
+}: {
+  onConfig: (update: Partial<AdminConfig>) => void;
+  onAuthNeeded: () => void;
+}) {
+  const save = useSave(onAuthNeeded);
+  const [files, setFiles] = useState<File[]>([]);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save.run(async () => {
+      if (files.length === 0)
+        throw new Error("Choose a PDF or a set of slide images (.png, .jpg, .webp).");
+      const pdfs = files.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+      if (pdfs.length > 0 && files.length > 1)
+        throw new Error("Upload either one PDF or images — not both.");
+      if (!title.trim() || !description.trim())
+        throw new Error("Title and description are required.");
+      const res = await adminApi.uploadDeck(files, title.trim(), description.trim());
+      onConfig({ content: res.content });
+      setFiles([]);
+      setTitle("");
+      setDescription("");
+      if (fileRef.current) fileRef.current.value = "";
+    });
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3 rounded-xl border border-dashed border-line p-4">
+      <p className="text-sm font-medium">Add a deck</p>
+      <p className="text-[12px] leading-relaxed text-muted">
+        One PDF (each page becomes a slide) or several images, ordered by filename.
+        After uploading, open the deck to write per-slide presenter notes — the exact
+        talk track spoken during a walkthrough.
+      </p>
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept="application/pdf,image/png,image/jpeg,image/webp"
+        onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+        className="block text-sm text-muted file:mr-3 file:rounded-full file:border-0 file:bg-panel-2 file:px-4 file:py-2 file:text-sm file:text-body"
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Title">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Description (tells the AI when to show it)">
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className={inputCls}
+          />
+        </Field>
+      </div>
+      <div className="flex items-center gap-3">
+        <SaveButton state={save.state} label="Upload" />
+        {files.length > 0 && (
+          <span className="text-[12px] text-muted">
+            {files.length === 1 ? files[0].name : `${files.length} files`}
+          </span>
+        )}
+        <ErrorText error={save.error} />
+      </div>
+    </form>
+  );
+}
+
 // ---------- content: videos ----------
 
+/**
+ * Card for editing a video's title and description, with option to delete.
+ */
 function VideoCard({
   item,
   onConfig,
@@ -844,6 +970,9 @@ function VideoCard({
   );
 }
 
+/**
+ * Form for uploading a new video clip with title and description.
+ */
 function VideoUpload({
   onConfig,
   onAuthNeeded,
@@ -904,6 +1033,9 @@ function VideoUpload({
 
 // ---------- shared ----------
 
+/**
+ * Button that triggers a hidden file input and calls onPick when a file is selected.
+ */
 function FilePicker({
   label,
   accept,
@@ -943,6 +1075,9 @@ function FilePicker({
 
 // ---------- page ----------
 
+/**
+ * Settings page for configuring brand, persona, avatar, messaging, and content.
+ */
 export default function SettingsPage() {
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [needToken, setNeedToken] = useState(false);
@@ -1047,7 +1182,7 @@ export default function SettingsPage() {
 
             <Section
               title="Slide decks"
-              hint="Slide images live in backend/content/slides/. Titles and descriptions steer when the AI shows a deck; presenter notes are the exact talk track it speaks on each slide."
+              hint="Titles and descriptions steer when the AI shows a deck; presenter notes are the exact talk track it speaks on each slide. Upload your own slideware as a PDF or a set of images."
             >
               {decks.length ? (
                 decks.map((deck) => (
@@ -1061,6 +1196,7 @@ export default function SettingsPage() {
               ) : (
                 <p className="text-sm text-muted">No slide decks are loaded.</p>
               )}
+              <DeckUpload onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
             </Section>
 
             <Section

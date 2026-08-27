@@ -25,6 +25,7 @@ MAX_LEN = 300
 
 
 def sanitize(text: str) -> str:
+    """Remove markdown formatting and collapse whitespace to prepare text for TTS."""
     return _WS.sub(" ", _MD_CHARS.sub("", text)).strip()
 
 
@@ -33,6 +34,9 @@ class SentenceChunker:
         self._buf = ""
 
     def feed(self, delta: str) -> list[str]:
+        """Process incoming text deltas and emit sentence-sized chunks ready for
+        TTS — usually whole sentences, but a clause, space, or hard MAX_LEN cut
+        when no sentence boundary appears in time."""
         self._buf += delta
         out: list[str] = []
         while True:
@@ -46,11 +50,14 @@ class SentenceChunker:
         return out
 
     def flush(self) -> str | None:
+        """Return any remaining buffered text as a final sentence, or None if empty."""
         cleaned = sanitize(self._buf)
         self._buf = ""
         return cleaned or None
 
     def _find_boundary(self, text: str) -> int | None:
+        """Find the next cut position — a sentence boundary, or a clause/space/
+        hard split once MAX_LEN is exceeded — or None to keep buffering."""
         for i, ch in enumerate(text):
             if ch not in ".!?":
                 continue
@@ -75,6 +82,7 @@ class SentenceChunker:
 
     @staticmethod
     def _is_non_terminal_period(text: str, i: int) -> bool:
+        """Check if a period at position i is part of an abbreviation or decimal, not a sentence end."""
         # decimal number: "4.5 million"
         if i > 0 and text[i - 1].isdigit() and i + 2 < len(text) and text[i + 2].isdigit():
             return True

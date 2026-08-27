@@ -66,6 +66,7 @@ class LiveAvatarLink:
             return None
 
     async def _start(self) -> None:
+        """Initialize a LiveAvatar session and connect to its WebSocket."""
         base = self.settings.liveavatar_api_base
         async with httpx.AsyncClient(timeout=20.0) as http:
             resp = await http.post(
@@ -126,6 +127,7 @@ class LiveAvatarLink:
         self._out_q.put_nowait({"type": "agent.interrupt", "event_id": uuid.uuid4().hex})
 
     async def _sender(self) -> None:
+        """Send queued packets to the LiveAvatar WebSocket."""
         while True:
             packet = await self._out_q.get()
             if self.ws is None or self._closed:
@@ -137,6 +139,7 @@ class LiveAvatarLink:
                 self._closed = True
 
     async def _keepalive(self) -> None:
+        """Send periodic keepalive messages to maintain the WebSocket connection."""
         while True:
             await asyncio.sleep(KEEPALIVE_INTERVAL)
             self._out_q.put_nowait({"type": "session.keep_alive", "event_id": uuid.uuid4().hex})
@@ -144,6 +147,7 @@ class LiveAvatarLink:
     # ---------- inbound ----------
 
     async def _reader(self) -> None:
+        """Read and process incoming messages from the LiveAvatar WebSocket."""
         try:
             async for raw in self.ws:
                 try:

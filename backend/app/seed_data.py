@@ -8,8 +8,11 @@ Runtime edits made in the settings view (/settings) are stored as override
 documents (see routes/admin.py) and re-applied on top of these definitions on
 every seed, so restarts keep edits while code-level rebrands still flow through
 underneath. Override keys: "persona" (field overrides), "content:<id>" (field
-overrides for seeded items), "video:<id>" ({"doc": ...} for uploaded videos).
+overrides for seeded items), and "video:<id>" / "deck:<id>" ({"doc": ...} for
+uploaded videos and slide decks).
 """
+
+import shutil
 
 from .config import CONTENT_DIR, UPLOADS_DIR, asset_file, settings
 
@@ -30,6 +33,7 @@ CONTENT_EDITABLE_FIELDS = {"title", "description", "presenter_notes"}
 
 
 def _apply_override(doc: dict, override: dict | None, allowed: set[str]) -> dict:
+    """Apply override fields to a document, keeping only allowed field names."""
     if override:
         doc.update({k: v for k, v in override.items() if k in allowed})
     return doc
@@ -195,6 +199,7 @@ VIDEOS = []
 
 
 async def seed(store) -> None:
+    """Seed persona and content items into the store, applying any saved overrides."""
     overrides = await store.list_overrides()
 
     persona = dict(PERSONA)
@@ -252,20 +257,29 @@ async def seed(store) -> None:
             )
         )
 
-    # Videos uploaded via the settings view live entirely in their override doc;
-    # re-seed the ones whose file still exists so prune keeps them.
+    # Content uploaded via the settings view (videos, decks) lives entirely in
+    # its override doc; re-seed what still has files so prune keeps it.
     for key, override in overrides.items():
-        if not key.startswith("video:"):
+        if not key.startswith(("video:", "deck:")):
             continue
         doc = override.get("doc") or {}
         assets = doc.get("assets") or []
-        # asset_file handles both /uploads/ and legacy /content/ video paths
-        asset_path = asset_file(assets[0]) if assets else None
-        if asset_path is not None and asset_path.exists():
+        # asset_file handles both /uploads/ and legacy /content/ paths; every
+        # slide must still exist — a deck missing any file is an orphan
+        asset_paths = [asset_file(asset) for asset in assets]
+        if assets and all(path is not None and path.exists() for path in asset_paths):
             seeded_ids.add(doc["_id"])
             await store.upsert_content_item(dict(doc))
         else:
-            await store.delete_override(key)  # file is gone — drop the orphan
+            # files are gone — drop the orphan; an uploaded deck may still have
+            # *some* slides on disk, and once its override and (pruned) item are
+            # gone nothing references them, so sweep its directory too
+            if key.startswith("deck:"):
+                decks_root = (UPLOADS_DIR / "decks").resolve()
+                deck_dir = (UPLOADS_DIR / "decks" / key.removeprefix("deck:")).resolve()
+                if deck_dir != decks_root and deck_dir.is_relative_to(decks_root):
+                    shutil.rmtree(deck_dir, ignore_errors=True)
+            await store.delete_override(key)
 
     # Content removed or renamed here must not linger from a previous seed
     # (a rebrand would otherwise keep serving the old brand's decks from Mongo).

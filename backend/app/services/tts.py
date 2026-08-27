@@ -51,6 +51,7 @@ class TtsRelay:
         self.http = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
 
     def submit(self, seq: int, text: str) -> None:
+        """Submit a sentence for TTS synthesis with the given sequence number."""
         queue: asyncio.Queue = asyncio.Queue()
         self.queues[seq] = queue
         self.order.put_nowait(seq)
@@ -59,6 +60,7 @@ class TtsRelay:
         self.fetch_tasks.append(asyncio.create_task(self._fetch(seq, text, prev, queue)))
 
     async def _fetch(self, seq: int, text: str, prev: str | None, queue: asyncio.Queue) -> None:
+        """Fetch TTS audio for a sentence with retries, streaming chunks to the queue."""
         try:
             async with self.sem:
                 if not self.settings.elevenlabs_api_key:
@@ -82,6 +84,7 @@ class TtsRelay:
             queue.put_nowait(_FAILED)
 
     async def _stream_once(self, text: str, prev: str | None, queue: asyncio.Queue) -> None:
+        """Stream PCM audio from ElevenLabs for one sentence, pushing chunks to the queue."""
         url = (
             f"https://api.elevenlabs.io/v1/text-to-speech/"
             f"{self.settings.elevenlabs_voice_id}/stream"
@@ -101,6 +104,7 @@ class TtsRelay:
                     queue.put_nowait(chunk)
 
     async def _relay(self) -> None:
+        """Relay TTS audio chunks to the client in strict sequence order."""
         while True:
             seq = await self.order.get()
             if seq == _CLOSE:
@@ -133,6 +137,7 @@ class TtsRelay:
             await self.http.aclose()
 
     def abort(self) -> None:
+        """Cancel all pending TTS tasks immediately without waiting for cleanup."""
         for task in self.fetch_tasks:
             task.cancel()
         self.relay_task.cancel()
