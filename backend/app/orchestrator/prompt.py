@@ -136,8 +136,13 @@ def build_system_prompt(
     manifest = "\n".join(manifest_lines) or "- (no visual content is loaded yet)"
 
     company = persona.get("company", persona["name"])
-    # gtm_override is the settings view's runtime replacement for GTM_KNOWLEDGE
-    gtm = gtm_override.strip() if gtm_override and gtm_override.strip() else GTM_KNOWLEDGE
+    # gtm_override is the settings view's runtime replacement for GTM_KNOWLEDGE;
+    # guard the type so a malformed stored override can never abort the turn
+    gtm = (
+        gtm_override.strip()
+        if isinstance(gtm_override, str) and gtm_override.strip()
+        else GTM_KNOWLEDGE
+    )
     return (
         f"You are {persona['name']}, {persona['tagline']} — an AI sales guide on the "
         f"{company} website, speaking with a visitor in real time.\n"

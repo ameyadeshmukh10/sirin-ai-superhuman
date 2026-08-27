@@ -27,6 +27,25 @@ app.include_router(api_router)
 app.include_router(admin_router)
 app.include_router(ws_router)
 
+# Largest allowed /api/admin request body: the video cap plus multipart overhead.
+# Enforced from the declared Content-Length BEFORE Starlette parses the body, so
+# an oversized upload is refused without spooling anything to temporary disk
+# (the per-file caps in routes/admin.py still guard the streamed bytes).
+ADMIN_MAX_BODY_BYTES = 210 * 1024 * 1024
+
+
+@app.middleware("http")
+async def admin_body_size_limit(request, call_next):
+    if request.url.path.startswith("/api/admin") and request.method in ("POST", "PUT", "PATCH"):
+        length = request.headers.get("content-length")
+        # browsers and standard clients always declare Content-Length; refuse
+        # chunked admin uploads rather than let them bypass the cap
+        if length is None or not length.isdigit():
+            return JSONResponse({"detail": "Content-Length required"}, status_code=411)
+        if int(length) > ADMIN_MAX_BODY_BYTES:
+            return JSONResponse({"detail": "request body too large"}, status_code=413)
+    return await call_next(request)
+
 CONTENT_DIR.mkdir(parents=True, exist_ok=True)  # settings-view uploads land here
 app.mount("/content", StaticFiles(directory=CONTENT_DIR), name="content")
 

@@ -133,6 +133,8 @@ function BrandSection({
         };
       } else if (logoSrc) {
         wordmark = { kind: "logo", src: logoSrc, alt: alt.trim() || "logo" };
+      } else {
+        throw new Error("Upload a logo image first.");
       }
       const res = await adminApi.updateBrand({ wordmark, book_meeting_url: bookUrl.trim() });
       onConfig({ brand: res.brand });
@@ -705,8 +707,14 @@ export default function SettingsPage() {
         setNeedToken(false);
       })
       .catch((err) => {
-        if (err instanceof AdminAuthError) setNeedToken(true);
-        else setLoadError("Couldn't reach the backend — is it running?");
+        if (err instanceof AdminAuthError) {
+          setNeedToken(true);
+          if (getAdminToken()) setLoadError("That admin token was rejected.");
+        } else if (err instanceof Error && err.message && !(err instanceof TypeError)) {
+          setLoadError(err.message); // server-reported detail (e.g. a 500)
+        } else {
+          setLoadError("Couldn't reach the backend — is it running?");
+        }
       });
   }, []);
 

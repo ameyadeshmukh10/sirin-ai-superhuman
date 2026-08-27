@@ -1,6 +1,6 @@
 // Client for the settings view's backend (/api/admin/*). When the backend has
-// ADMIN_TOKEN set, requests need the token — kept in localStorage and sent as
-// an X-Admin-Token header; a 401 throws AdminAuthError so the page can prompt.
+// ADMIN_TOKEN set, requests need the token — held in memory and sent as an
+// X-Admin-Token header; a 401 throws AdminAuthError so the page can prompt.
 
 import type { Wordmark } from "../brand";
 import type { BrandOverride } from "./useBrand";
@@ -44,22 +44,17 @@ export class AdminAuthError extends Error {
   }
 }
 
-const TOKEN_KEY = "superhuman_admin_token";
+// In memory only — never persisted to localStorage/sessionStorage, where any
+// same-origin script could read it. The cost is re-entering the token after a
+// full page reload.
+let adminToken = "";
 
 export function getAdminToken(): string {
-  try {
-    return localStorage.getItem(TOKEN_KEY) ?? "";
-  } catch {
-    return "";
-  }
+  return adminToken;
 }
 
 export function setAdminToken(token: string) {
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    // private mode etc. — token just won't persist across reloads
-  }
+  adminToken = token;
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

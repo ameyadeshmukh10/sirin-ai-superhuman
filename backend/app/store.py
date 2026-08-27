@@ -128,8 +128,10 @@ class MongoStore:
         await self.db.overrides.delete_one({"_id": key})
 
     async def list_overrides(self) -> dict[str, dict]:
+        # unbounded: seed() prunes content items that aren't restored from here,
+        # so truncating this listing could delete uploaded videos on startup
         out: dict[str, dict] = {}
-        for doc in await self.db.overrides.find().to_list(length=500):
+        async for doc in self.db.overrides.find():
             key = doc.pop("_id")
             out[key] = doc
         return out

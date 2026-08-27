@@ -7,6 +7,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -33,11 +34,16 @@ const BrandContext = createContext<{ brand: BrandConfig; refresh: () => void }>(
 
 export function BrandProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<BrandConfig>(defaults);
+  const generation = useRef(0);
 
   const refresh = useCallback(() => {
+    const gen = ++generation.current;
     fetch("/api/brand")
       .then((res) => (res.ok ? res.json() : null))
-      .then((override: BrandOverride | null) => setConfig(mergeBrand(override)))
+      .then((override: BrandOverride | null) => {
+        // drop stale responses: only the latest refresh may apply its result
+        if (gen === generation.current) setConfig(mergeBrand(override));
+      })
       .catch(() => {}); // backend unreachable — static defaults stand
   }, []);
 
