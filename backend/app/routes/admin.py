@@ -624,13 +624,22 @@ async def replace_deck_slides(item_id: str, files: list[UploadFile] = File(...))
         raise
 
     gen = uuid.uuid4().hex[:8]
-    doc = dict(item)
-    doc["assets"] = [f"/uploads/decks/{item_id}/{gen}/{name}" for name in slide_names]
-    count_changed = len(slide_names) != len(item.get("assets") or [])
-    if count_changed:
-        doc["presenter_notes"] = []
-
     async with _replace_lock:
+        # revalidate under the lock: the deck may have been deleted (or its
+        # notes edited) while the upload streamed and rendered outside it —
+        # registering against that stale read would resurrect a deleted deck
+        items = {i["_id"]: i for i in await store.list_content_items()}
+        item = items.get(item_id)
+        if item is None or item.get("type") != "slide_deck":
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise HTTPException(409, "this deck was deleted while the upload was in flight")
+
+        doc = dict(item)
+        doc["assets"] = [f"/uploads/decks/{item_id}/{gen}/{name}" for name in slide_names]
+        count_changed = len(slide_names) != len(item.get("assets") or [])
+        if count_changed:
+            doc["presenter_notes"] = []
+
         custom_key, prior_custom = None, None
         for prefix in CUSTOM_CONTENT_PREFIXES:
             prior = await store.get_override(f"{prefix}{item_id}")
