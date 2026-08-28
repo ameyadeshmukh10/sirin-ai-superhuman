@@ -62,13 +62,14 @@ AVATAR_CATALOG: list[dict] = json.loads(
 )
 AVATARS_BY_ID = {a["id"]: a for a in AVATAR_CATALOG}
 
-# Serializes the file-replacement flows (persona photo, logo, deck slides) and
-# deck deletion: their swap → persist → cleanup steps must not interleave, or
-# one request's cleanup could delete the files another request's stored paths
-# end up pointing at. Uploads stream OUTSIDE the lock (to dotted temp names);
-# only the fast swap/persist/cleanup section holds it. (Single-process app, so
-# an asyncio lock fully serializes them; video uploads need none — unique
-# filenames.)
+# Serializes the file-replacement flows (persona photo, logo, deck slides),
+# deck deletion, reset, and content edits: their swap → persist → cleanup and
+# read-modify-write steps must not interleave, or one request's cleanup could
+# delete the files another request's stored paths end up pointing at (and a
+# stale edit read could clobber a just-committed replacement). Uploads stream
+# OUTSIDE the lock (to dotted temp names); only the fast swap/persist/cleanup
+# section holds it. (Single-process app, so an asyncio lock fully serializes
+# them; video uploads need none — unique filenames.)
 _replace_lock = asyncio.Lock()
 
 
@@ -440,41 +441,45 @@ async def update_avatar(body: AvatarUpdate):
 async def update_content(item_id: str, body: ContentUpdate):
     """Edit a content item's title, description, or presenter notes."""
     store = get_store()
-    items = {i["_id"]: i for i in await store.list_content_items()}
-    item = items.get(item_id)
-    if item is None:
-        raise HTTPException(404, "content item not found")
+    # under _replace_lock: this read-modify-write must not interleave with a
+    # slide replacement or delete, or a stale read here would re-point the
+    # override at already-swept slide files
+    async with _replace_lock:
+        items = {i["_id"]: i for i in await store.list_content_items()}
+        item = items.get(item_id)
+        if item is None:
+            raise HTTPException(404, "content item not found")
 
-    fields: dict = {}
-    title = _clean_str(body.title, max_len=200)
-    if title is not None:
-        fields["title"] = title
-    description = _clean_str(body.description)
-    if description is not None:
-        fields["description"] = description
-    if body.presenter_notes is not None:
-        if item["type"] != "slide_deck":
-            raise HTTPException(422, "presenter_notes only apply to slide decks")
-        fields["presenter_notes"] = [n.strip()[:4000] for n in body.presenter_notes]
-    if not fields:
-        raise HTTPException(422, "no fields to update")
+        fields: dict = {}
+        title = _clean_str(body.title, max_len=200)
+        if title is not None:
+            fields["title"] = title
+        description = _clean_str(body.description)
+        if description is not None:
+            fields["description"] = description
+        if body.presenter_notes is not None:
+            if item["type"] != "slide_deck":
+                raise HTTPException(422, "presenter_notes only apply to slide decks")
+            fields["presenter_notes"] = [n.strip()[:4000] for n in body.presenter_notes]
+        if not fields:
+            raise HTTPException(422, "no fields to update")
 
-    # the override is the durable truth seed() restores from — write it first,
-    # so a failure after it leaves at worst a stale live item that the next
-    # startup heals, never a durable record that silently reverts the edit
-    item.update(fields)
-    for prefix in CUSTOM_CONTENT_PREFIXES:
-        custom_override = await store.get_override(f"{prefix}{item_id}")
-        if custom_override is not None:
-            # uploaded content: its override doc IS the source of truth
-            custom_override["doc"] = dict(item)
-            await store.set_override(f"{prefix}{item_id}", custom_override)
-            break
-    else:
-        override = await store.get_override(f"content:{item_id}") or {}
-        override.update({k: v for k, v in fields.items() if k in CONTENT_EDITABLE_FIELDS})
-        await store.set_override(f"content:{item_id}", override)
-    await store.upsert_content_item(item)
+        # the override is the durable truth seed() restores from — write it first,
+        # so a failure after it leaves at worst a stale live item that the next
+        # startup heals, never a durable record that silently reverts the edit
+        item.update(fields)
+        for prefix in CUSTOM_CONTENT_PREFIXES:
+            custom_override = await store.get_override(f"{prefix}{item_id}")
+            if custom_override is not None:
+                # uploaded content: its override doc IS the source of truth
+                custom_override["doc"] = dict(item)
+                await store.set_override(f"{prefix}{item_id}", custom_override)
+                break
+        else:
+            override = await store.get_override(f"content:{item_id}") or {}
+            override.update({k: v for k, v in fields.items() if k in CONTENT_EDITABLE_FIELDS})
+            await store.set_override(f"content:{item_id}", override)
+        await store.upsert_content_item(item)
     return {"content": await _content_with_flags()}
 
 
