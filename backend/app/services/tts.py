@@ -15,6 +15,7 @@ from typing import Awaitable, Callable
 import httpx
 
 from ..config import Settings
+from ..credits import consume_tts
 
 log = logging.getLogger("tts")
 
@@ -69,13 +70,18 @@ class TtsRelay:
                 for attempt in (0, 1):
                     try:
                         await self._stream_once(text, prev, queue)
-                        queue.put_nowait(_DONE)
-                        return
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
                         log.warning("TTS seq=%s attempt=%s failed: %s", seq, attempt, exc)
                         await asyncio.sleep(0.4)
+                        continue
+                    queue.put_nowait(_DONE)
+                    # meter only what actually synthesized (failures are free) —
+                    # outside the retry path, so an accounting hiccup can never
+                    # trigger a second synthesis or double-queue audio
+                    await consume_tts(len(text))
+                    return
                 queue.put_nowait(_FAILED)
         except asyncio.CancelledError:
             queue.put_nowait(_FAILED)

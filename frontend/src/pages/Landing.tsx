@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import PersonaVisual from "../components/PersonaVisual";
 import Wordmark from "../components/Wordmark";
 import { player } from "../lib/pcmPlayer";
-import { createSession, fetchPersona, type Persona } from "../lib/protocol";
+import { OutOfCreditsError, createSession, fetchPersona, type Persona } from "../lib/protocol";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -25,8 +25,12 @@ export default function Landing() {
     try {
       const session = await createSession();
       navigate(`/session/${session.id}`);
-    } catch {
-      setError("Couldn't start a session — is the backend running?");
+    } catch (err) {
+      setError(
+        err instanceof OutOfCreditsError
+          ? "This experience is taking a short break — please check back soon."
+          : "Couldn't start a session — is the backend running?",
+      );
       setBusy(false);
     }
   };

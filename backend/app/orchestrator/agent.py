@@ -20,6 +20,8 @@ from anthropic import AsyncAnthropic
 from fastapi import WebSocket, WebSocketDisconnect
 
 from ..config import Settings
+from ..credits import blocked as credits_blocked
+from ..credits import consume_claude
 from ..services.liveavatar import LiveAvatarLink
 from ..services.tts import TtsRelay
 from . import tools as tools_mod
@@ -31,6 +33,11 @@ log = logging.getLogger("agent")
 FALLBACK_REPLY = (
     "I'm having trouble reaching my brain right now. Give me a moment and try again, "
     "or use the Book a Meeting button to reach a human."
+)
+
+OUT_OF_CREDITS_REPLY = (
+    "This experience has used up its available credits for now. Please check back "
+    "soon, or use the Book a Meeting button to reach a human directly."
 )
 
 NUDGE_INSTRUCTION = (
@@ -131,7 +138,12 @@ class SessionRunner:
         self.gtm_override = ((await self.store.get_override("gtm")) or {}).get("text")
         self.avatar_id = await resolve_avatar_id(self.store, self.settings)
 
-        if self.avatar_id:
+        # session creation is already gated, but a reconnect to an EXISTING
+        # session lands here directly — an empty wallet must not buy a fresh
+        # avatar session or greeting TTS on that path either
+        blocked_now = await credits_blocked(self.store)
+
+        if self.avatar_id and not blocked_now:
             self.avatar = await LiveAvatarLink.create(self.settings, self.avatar_id)
             if self.avatar:
                 self.emit(
@@ -144,7 +156,7 @@ class SessionRunner:
                 )
 
         history = await self.store.get_messages(self.session["_id"])
-        if not history:
+        if not history and not blocked_now:
             await self._start_turn(self._greeting_turn)
         else:
             self.emit({"type": "state", "status": "idle"}, self.gen)
@@ -442,6 +454,22 @@ class SessionRunner:
                 self.session["_id"], {"role": "user", "text": user_text, "source": source}
             )
         self.emit({"type": "state", "status": "thinking"}, gen)
+        # checked before any relay or avatar exists: a blocked wallet must not
+        # buy TTS or a fresh LiveAvatar session, however many messages arrive.
+        # The refusal is text-only — sentence + audio_failed reveals the text
+        # immediately client-side, exactly like any unsynthesized sentence
+        if await credits_blocked(self.store):
+            self.emit({"type": "assistant_start", "message_id": uuid.uuid4().hex}, gen)
+            self.emit({"type": "state", "status": "speaking"}, gen)
+            self.emit({"type": "sentence", "seq": 1, "text": OUT_OF_CREDITS_REPLY}, gen)
+            self.emit({"type": "audio_failed", "seq": 1}, gen)
+            self.emit({"type": "assistant_end", "stop_reason": "end_turn"}, gen)
+            self.emit({"type": "state", "status": "idle"}, gen)
+            await self.store.add_message(
+                self.session["_id"],
+                {"role": "assistant", "text": OUT_OF_CREDITS_REPLY, "source": "credits"},
+            )
+            return
         await self._ensure_avatar(gen)
 
         seq = _Seq()
@@ -508,6 +536,9 @@ class SessionRunner:
                             dispatch_sentence(tail)
                 final = await stream.get_final_message()
 
+            await consume_claude(
+                final.usage.input_tokens, final.usage.output_tokens, self.session["_id"]
+            )
             stop_reason = final.stop_reason or "end_turn"
             if stop_reason != "tool_use":
                 break

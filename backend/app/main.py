@@ -9,6 +9,7 @@ from . import seed_data
 from .config import CONTENT_DIR, STATIC_DIR, UPLOADS_DIR, settings
 from .routes.admin import router as admin_router
 from .routes.api import router as api_router
+from .routes.billing import router as billing_router
 from .store import init_store
 from .ws.endpoint import router as ws_router
 
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Sirin AI Superhuman", lifespan=lifespan)
 app.include_router(api_router)
 app.include_router(admin_router)
+app.include_router(billing_router)
 app.include_router(ws_router)
 
 # Largest allowed /api/admin request body: the video cap plus multipart overhead.

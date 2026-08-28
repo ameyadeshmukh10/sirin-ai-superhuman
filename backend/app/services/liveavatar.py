@@ -27,6 +27,8 @@ from typing import Callable
 import httpx
 import websockets
 
+from ..credits import consume_avatar
+
 log = logging.getLogger("liveavatar")
 
 CONNECTED_TIMEOUT = 12.0
@@ -48,6 +50,9 @@ class LiveAvatarLink:
         self._tasks: list[asyncio.Task] = []
         self._connected = asyncio.Event()
         self._closed = False
+        self._metered = False
+        self._final_age: float | None = None
+        self._usage_ref: str | None = None
         self.started_at = time.monotonic()
 
     @classmethod
@@ -182,6 +187,12 @@ class LiveAvatarLink:
     async def close(self, reason: str = "USER_CLOSED") -> None:
         """Stop the LiveAvatar session promptly — it bills per minute."""
         self._closed = True
+        # capture the billable duration and the stable usage ref NOW: teardown
+        # clears session_id, and a metering retry must reuse both unchanged
+        if self._final_age is None:
+            self._final_age = self.age
+        if self._usage_ref is None:
+            self._usage_ref = self.session_id
         for task in self._tasks:
             task.cancel()
         self._tasks = []
@@ -202,3 +213,11 @@ class LiveAvatarLink:
             except Exception as exc:
                 log.warning("session stop failed (may idle out on its own): %s", exc)
             self.session_id = None
+        # meter AFTER teardown, so accounting can never delay or prevent
+        # stopping the per-minute provider session. Charged exactly once: only
+        # a session that actually started (livekit_url) is billable, a failed
+        # charge stays retryable by a later close, and the usage ref makes the
+        # ledger recording itself idempotent across those retries
+        if self.livekit_url and not self._metered:
+            if await consume_avatar(self._final_age, ref=self._usage_ref):
+                self._metered = True

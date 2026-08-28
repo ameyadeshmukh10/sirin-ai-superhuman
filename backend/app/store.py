@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -13,6 +14,42 @@ log = logging.getLogger("store")
 def _now() -> float:
     """Return the current Unix timestamp."""
     return time.time()
+
+
+_EMPTY_WALLET = {"balance_mc": 0, "granted_mc": 0, "used_mc": {}, "units": {}}
+
+# Idempotency for ref'd entries is two-layer. The DURABLE layer is the ledger
+# row's deterministic _id: it exists exactly when an entry fully completed, is
+# checked first, and never expires — so a replay of any completed entry is
+# refused forever. The ATOMIC layer is a bounded ref window inside the wallet
+# doc, guarding the increment itself (single-document atomicity) for the cases
+# the ledger can't see yet: concurrent first deliveries, and a crash between
+# the wallet update and the ledger write. That gap closes on the next replay
+# (the window match repairs the missing ledger row), so the window only needs
+# to outlast one retry cycle — well within this many subsequent ref'd entries.
+_APPLIED_REFS_KEPT = 500
+
+
+def _ledger_entry(entry: dict) -> dict:
+    """Normalize a credit-ledger entry: stamp time and a deterministic id for
+    ref'd entries (so e.g. a replayed Stripe webhook can't grant twice)."""
+    doc = {
+        "_id": f"{entry['kind']}:{entry['ref']}" if entry.get("ref") else uuid.uuid4().hex,
+        **entry,
+    }
+    doc.setdefault("ts", _now())
+    return doc
+
+
+def _wallet_incs(delta_mc: int, entry: dict) -> dict:
+    """The wallet counters one ledger entry moves (dotted keys, Mongo-style)."""
+    incs = {"balance_mc": delta_mc}
+    if entry["kind"] == "grant":
+        incs["granted_mc"] = entry["mc"]
+    else:
+        incs[f"used_mc.{entry['service']}"] = entry["mc"]
+        incs[f"units.{entry['service']}"] = entry.get("units", 0)
+    return incs
 
 
 class MemoryStore:
@@ -27,6 +64,8 @@ class MemoryStore:
         self.personas: dict[str, dict] = {}
         self.content_items: dict[str, dict] = {}
         self.overrides: dict[str, dict] = {}
+        self.wallet: dict = json.loads(json.dumps(_EMPTY_WALLET))
+        self.credit_ledger: dict[str, dict] = {}
 
     async def upsert_persona(self, doc: dict) -> None:
         """Insert or update a persona document by its _id."""
@@ -64,6 +103,42 @@ class MemoryStore:
     async def get_persona(self, persona_id: str) -> dict | None:
         """Retrieve a persona document by its id, or None if not found."""
         return self.personas.get(persona_id)
+
+    async def get_wallet(self) -> dict:
+        """Return the credit wallet (balance and per-service usage counters)."""
+        return json.loads(json.dumps(self.wallet))
+
+    async def adjust_credits(self, delta_mc: int, entry: dict) -> bool:
+        """Apply one credit-ledger entry (grant or use) to the wallet.
+
+        Returns False without changing anything when the entry carries a `ref`
+        that was already applied (idempotent purchase/usage recording)."""
+        doc = _ledger_entry(entry)
+        ref = entry.get("ref")
+        if ref:
+            if doc["_id"] in self.credit_ledger:
+                return False  # durable layer: this entry fully completed before
+            refs = self.wallet.setdefault("applied_refs", [])
+            if ref in refs:
+                # applied but the ledger row is missing — repair it, no re-apply
+                self.credit_ledger[doc["_id"]] = doc
+                return False
+            refs.append(ref)
+            del refs[:-_APPLIED_REFS_KEPT]
+        self.credit_ledger[doc["_id"]] = doc
+        for key, inc in _wallet_incs(delta_mc, entry).items():
+            parent, _, child = key.partition(".")
+            if child:
+                bucket = self.wallet.setdefault(parent, {})
+                bucket[child] = bucket.get(child, 0) + inc
+            else:
+                self.wallet[parent] = self.wallet.get(parent, 0) + inc
+        return True
+
+    async def list_credit_entries(self, limit: int = 12) -> list[dict]:
+        """Return the most recent credit-ledger entries, newest first."""
+        entries = sorted(self.credit_ledger.values(), key=lambda e: e["ts"], reverse=True)
+        return [dict(e) for e in entries[:limit]]
 
     async def list_content_items(self) -> list[dict]:
         """Return all content item documents as a list."""
@@ -120,6 +195,7 @@ class MongoStore:
         """Create database indexes for efficient querying."""
         await self.db.messages.create_index([("session_id", 1), ("ts", 1)])
         await self.db.events.create_index([("session_id", 1), ("ts", 1)])
+        await self.db.credit_ledger.create_index([("ts", -1)])
 
     async def upsert_persona(self, doc: dict) -> None:
         """Insert or update a persona document by its _id."""
@@ -165,6 +241,71 @@ class MongoStore:
     async def get_persona(self, persona_id: str) -> dict | None:
         """Retrieve a persona document by its id, or None if not found."""
         return await self.db.personas.find_one({"_id": persona_id})
+
+    async def get_wallet(self) -> dict:
+        """Return the credit wallet (balance and per-service usage counters)."""
+        doc = await self.db.credit_wallet.find_one({"_id": "wallet"})
+        return {**_EMPTY_WALLET, **(doc or {})}
+
+    async def adjust_credits(self, delta_mc: int, entry: dict) -> bool:
+        """Apply one credit-ledger entry (grant or use) to the wallet.
+
+        No multi-document transaction is assumed (standalone Mongo, the usual
+        Railway topology, has none). Idempotency for ref'd entries instead
+        rides single-document atomicity: the wallet doc itself records which
+        refs were applied, and one guarded update either increments AND
+        records the ref, or matches nothing — so a retry after any unknown
+        outcome (a replayed Stripe webhook, a re-closed avatar link) can never
+        double-apply, and there is no separate flag to drift. The ledger row
+        is the audit trail; the wallet is authoritative, so a lost row is
+        cosmetic and logged."""
+        doc = _ledger_entry(entry)
+        incs = _wallet_incs(delta_mc, entry)
+        ref = entry.get("ref")
+        if ref:
+            # durable layer: a ledger row with this deterministic _id exists
+            # exactly when the entry fully completed — refuse replays forever,
+            # however long ago and whatever the ref window has since seen
+            if await self.db.credit_ledger.find_one({"_id": doc["_id"]}, {"_id": 1}):
+                return False
+            applied = False
+            try:
+                result = await self.db.credit_wallet.update_one(
+                    {"_id": "wallet", "applied_refs": {"$ne": ref}},
+                    {
+                        "$inc": incs,
+                        "$push": {"applied_refs": {"$each": [ref], "$slice": -_APPLIED_REFS_KEPT}},
+                    },
+                    upsert=True,
+                )
+                applied = result.modified_count > 0 or result.upserted_id is not None
+            except Exception as exc:
+                # the wallet exists but the filter excluded it (ref already
+                # applied): the upsert then collides on _id — that IS the
+                # already-applied signal
+                if type(exc).__name__ != "DuplicateKeyError":
+                    raise
+            if not applied:
+                # the wallet applied this ref earlier but its ledger row is
+                # missing (the write below failed then) — repair it, no re-apply
+                try:
+                    await self.db.credit_ledger.replace_one(
+                        {"_id": doc["_id"]}, doc, upsert=True
+                    )
+                except Exception:
+                    log.exception("credit ledger repair failed (will retry on next replay)")
+                return False
+        else:
+            await self.db.credit_wallet.update_one({"_id": "wallet"}, {"$inc": incs}, upsert=True)
+        try:
+            await self.db.credit_ledger.insert_one(doc)
+        except Exception:
+            log.exception("credit ledger write failed (repaired on the next replay)")
+        return True
+
+    async def list_credit_entries(self, limit: int = 12) -> list[dict]:
+        """Return the most recent credit-ledger entries, newest first."""
+        return await self.db.credit_ledger.find().sort("ts", -1).to_list(length=limit)
 
     async def list_content_items(self) -> list[dict]:
         """Return content item documents (capped at 200)."""

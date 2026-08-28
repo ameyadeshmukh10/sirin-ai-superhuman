@@ -43,8 +43,15 @@ export async function fetchPersona(): Promise<Persona> {
   return res.json();
 }
 
+export class OutOfCreditsError extends Error {
+  constructor() {
+    super("out of credits");
+  }
+}
+
 export async function createSession(): Promise<SessionInfo> {
   const res = await fetch("/api/sessions", { method: "POST" });
+  if (res.status === 402) throw new OutOfCreditsError();
   if (!res.ok) throw new Error(`create session failed: ${res.status}`);
   return res.json();
 }
