@@ -160,6 +160,14 @@ export const adminApi = {
       body: form,
     });
   },
+  replaceDeckSlides: (id: string, files: File[]) => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    return request<{ content: AdminContentItem[] }>(`/api/admin/content/${id}/slides`, {
+      method: "POST",
+      body: form,
+    });
+  },
   deleteContent: (id: string) =>
     request<{ content: AdminContentItem[] }>(`/api/admin/content/${id}`, { method: "DELETE" }),
 

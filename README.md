@@ -85,7 +85,9 @@ where the whole experience can be edited at runtime — no redeploy needed:
   and per-slide presenter notes (the spoken talk track). Upload your own
   slideware — one PDF (each page becomes a slide, rendered server-side; up to
   40 pages, 60MB) or up to 40 PNG/JPG/WebP images — and delete uploaded decks
-  when done.
+  when done. Any existing deck's slides (seeded or uploaded) can be replaced
+  the same way: presenter notes carry over when the slide count stays the
+  same, and "Reset to defaults" brings a seeded deck's original slides back.
 - **Videos**: upload MP4/WebM clips with a title and description — the AI can
   then play them via `play_video` — plus edit or delete them.
 

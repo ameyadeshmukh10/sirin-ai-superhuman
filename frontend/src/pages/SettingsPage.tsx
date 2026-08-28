@@ -721,6 +721,20 @@ function DeckCard({
   const [title, setTitle] = useState(item.title);
   const [description, setDescription] = useState(item.description);
   const [notes, setNotes] = useState(item.assets.map((_, i) => item.presenter_notes[i] ?? ""));
+  const replaceRef = useRef<HTMLInputElement>(null);
+
+  const replaceSlides = (files: File[]) => {
+    save.run(async () => {
+      const pdfs = files.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+      if (pdfs.length > 0 && files.length > 1)
+        throw new Error("Upload either one PDF or images — not both.");
+      const res = await adminApi.replaceDeckSlides(item.id, files);
+      onConfig({ content: res.content });
+      const fresh = res.content.find((c) => c.id === item.id);
+      if (fresh) setNotes(fresh.assets.map((_, i) => fresh.presenter_notes[i] ?? ""));
+      if (replaceRef.current) replaceRef.current.value = "";
+    });
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -797,6 +811,32 @@ function DeckCard({
                 </Field>
               </div>
             ))}
+          </div>
+          <div className="space-y-2 rounded-lg border border-dashed border-line p-3">
+            <p className="text-[13px] font-medium">Replace slides</p>
+            <p className="text-[12px] leading-relaxed text-muted">
+              Upload a new PDF or set of images to swap out every slide
+              {item.custom ? "" : " — Reset to defaults brings the originals back"}.
+              Presenter notes are kept when the slide count stays the same, otherwise
+              they're cleared.
+            </p>
+            <input
+              ref={replaceRef}
+              type="file"
+              multiple
+              accept="application/pdf,image/png,image/jpeg,image/webp"
+              disabled={save.state === "saving"}
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []);
+                if (picked.length === 0) return;
+                if (!window.confirm(`Replace all ${item.assets.length} slides of “${title}”?`)) {
+                  if (replaceRef.current) replaceRef.current.value = "";
+                  return;
+                }
+                replaceSlides(picked);
+              }}
+              className="block text-sm text-muted file:mr-3 file:rounded-full file:border-0 file:bg-panel-2 file:px-4 file:py-2 file:text-sm file:text-body"
+            />
           </div>
           <div className="flex items-center gap-3">
             <SaveButton state={save.state} />

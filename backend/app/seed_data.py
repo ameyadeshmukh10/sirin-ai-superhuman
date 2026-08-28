@@ -8,8 +8,9 @@ Runtime edits made in the settings view (/settings) are stored as override
 documents (see routes/admin.py) and re-applied on top of these definitions on
 every seed, so restarts keep edits while code-level rebrands still flow through
 underneath. Override keys: "persona" (field overrides), "content:<id>" (field
-overrides for seeded items), and "video:<id>" / "deck:<id>" ({"doc": ...} for
-uploaded videos and slide decks).
+overrides for seeded items — including "assets" when the deck's slides were
+replaced from the settings view), and "video:<id>" / "deck:<id>"
+({"doc": ...} for uploaded videos and slide decks).
 """
 
 import logging
@@ -40,6 +41,32 @@ def _apply_override(doc: dict, override: dict | None, allowed: set[str]) -> dict
     if override:
         doc.update({k: v for k, v in override.items() if k in allowed})
     return doc
+
+
+async def _drop_slide_replacement(store, deck_id: str, override: dict) -> dict:
+    """A seeded deck's replacement slides are gone — revert to the code slides.
+
+    Sweeps the replacement directory and strips the replacement fields from the
+    stored override (title/description edits survive; presenter notes belonged
+    to the replaced slides, so they revert with them). The stored override is
+    only rewritten once the sweep succeeds, so a failed sweep retries next
+    seed; either way the returned override no longer carries the replacement."""
+    remaining = {k: v for k, v in override.items() if k not in ("assets", "presenter_notes")}
+    deck_dir = UPLOADS_DIR / "decks" / deck_id
+    try:
+        shutil.rmtree(deck_dir)
+        swept = True
+    except FileNotFoundError:
+        swept = True
+    except OSError:
+        log.warning("couldn't remove replaced-slide dir %s — will retry", deck_dir)
+        swept = False
+    if swept:
+        if remaining:
+            await store.set_override(f"content:{deck_id}", remaining)
+        else:
+            await store.delete_override(f"content:{deck_id}")
+    return remaining
 
 PERSONA = {
     "_id": "sage",
@@ -224,7 +251,17 @@ async def seed(store) -> None:
     for deck in SLIDE_DECKS:
         deck_dir = CONTENT_DIR / deck["dir"]
         slides = sorted(p.name for p in deck_dir.glob("*.png")) if deck_dir.exists() else []
-        if not slides:
+        assets = [f"/content/{deck['dir']}/{name}" for name in slides]
+        override = overrides.get(f"content:{deck['_id']}")
+        # slides replaced via the settings view win while every file exists;
+        # otherwise revert to the code slides and clean the replacement up
+        if override and "assets" in override:
+            paths = [asset_file(a) for a in (override.get("assets") or [])]
+            if override.get("assets") and all(p is not None and p.exists() for p in paths):
+                assets = override["assets"]
+            else:
+                override = await _drop_slide_replacement(store, deck["_id"], override)
+        if not assets:
             continue
         seeded_ids.add(deck["_id"])
         await store.upsert_content_item(
@@ -234,10 +271,10 @@ async def seed(store) -> None:
                     "type": "slide_deck",
                     "title": deck["title"],
                     "description": deck["description"],
-                    "assets": [f"/content/{deck['dir']}/{name}" for name in slides],
+                    "assets": assets,
                     "presenter_notes": deck.get("presenter_notes") or [],
                 },
-                overrides.get(f"content:{deck['_id']}"),
+                override,
                 CONTENT_EDITABLE_FIELDS,
             )
         )
