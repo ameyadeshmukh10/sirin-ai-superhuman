@@ -85,7 +85,9 @@ where the whole experience can be edited at runtime — no redeploy needed:
   and per-slide presenter notes (the spoken talk track). Upload your own
   slideware — one PDF (each page becomes a slide, rendered server-side; up to
   40 pages, 60MB) or up to 40 PNG/JPG/WebP images — and delete uploaded decks
-  when done.
+  when done. Any existing deck's slides (seeded or uploaded) can be replaced
+  the same way: presenter notes carry over when the slide count stays the
+  same, and "Reset to defaults" brings a seeded deck's original slides back.
 - **Videos**: upload MP4/WebM clips with a title and description — the AI can
   then play them via `play_video` — plus edit or delete them.
 
@@ -131,6 +133,11 @@ two backend content files above.
    redeploys, add a **volume** to the app service mounted at `/srv/uploads`
    (or mount elsewhere and set `UPLOADS_DIR` to that path).
 5. Healthcheck path is `/api/health` (set in `railway.json`). Generate a domain.
+
+Keep the app at a single instance (`railway.json` pins `numReplicas: 1`): the
+whole app is single-process by design — live sessions are held in memory, and
+the settings view's file writes rely on in-process locking. Scaling out would
+need shared session state and distributed locks, not just more replicas.
 
 ## Smoke test
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import secrets
 import shutil
@@ -31,6 +32,8 @@ from ..config import UPLOADS_DIR, asset_file, settings
 from ..orchestrator.prompt import GTM_KNOWLEDGE
 from ..seed_data import CONTENT_EDITABLE_FIELDS, PERSONA, PERSONA_EDITABLE_FIELDS, seed
 from ..store import get_store
+
+log = logging.getLogger("admin")
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_VIDEO_BYTES = 200 * 1024 * 1024
@@ -59,10 +62,14 @@ AVATAR_CATALOG: list[dict] = json.loads(
 )
 AVATARS_BY_ID = {a["id"]: a for a in AVATAR_CATALOG}
 
-# Serializes the persona/logo replacement flows: their save → persist → delete
-# steps must not interleave, or one request's cleanup could delete the file
-# another request's stored path ends up pointing at. (Single-process app, so
-# an asyncio lock fully serializes them; videos need none — unique filenames.)
+# Serializes the file-replacement flows (persona photo, logo, deck slides),
+# deck deletion, reset, and content edits: their swap → persist → cleanup and
+# read-modify-write steps must not interleave, or one request's cleanup could
+# delete the files another request's stored paths end up pointing at (and a
+# stale edit read could clobber a just-committed replacement). Uploads stream
+# OUTSIDE the lock (to dotted temp names); only the fast swap/persist/cleanup
+# section holds it. (Single-process app, so an asyncio lock fully serializes
+# them; video uploads need none — unique filenames.)
 _replace_lock = asyncio.Lock()
 
 
@@ -434,41 +441,45 @@ async def update_avatar(body: AvatarUpdate):
 async def update_content(item_id: str, body: ContentUpdate):
     """Edit a content item's title, description, or presenter notes."""
     store = get_store()
-    items = {i["_id"]: i for i in await store.list_content_items()}
-    item = items.get(item_id)
-    if item is None:
-        raise HTTPException(404, "content item not found")
+    # under _replace_lock: this read-modify-write must not interleave with a
+    # slide replacement or delete, or a stale read here would re-point the
+    # override at already-swept slide files
+    async with _replace_lock:
+        items = {i["_id"]: i for i in await store.list_content_items()}
+        item = items.get(item_id)
+        if item is None:
+            raise HTTPException(404, "content item not found")
 
-    fields: dict = {}
-    title = _clean_str(body.title, max_len=200)
-    if title is not None:
-        fields["title"] = title
-    description = _clean_str(body.description)
-    if description is not None:
-        fields["description"] = description
-    if body.presenter_notes is not None:
-        if item["type"] != "slide_deck":
-            raise HTTPException(422, "presenter_notes only apply to slide decks")
-        fields["presenter_notes"] = [n.strip()[:4000] for n in body.presenter_notes]
-    if not fields:
-        raise HTTPException(422, "no fields to update")
+        fields: dict = {}
+        title = _clean_str(body.title, max_len=200)
+        if title is not None:
+            fields["title"] = title
+        description = _clean_str(body.description)
+        if description is not None:
+            fields["description"] = description
+        if body.presenter_notes is not None:
+            if item["type"] != "slide_deck":
+                raise HTTPException(422, "presenter_notes only apply to slide decks")
+            fields["presenter_notes"] = [n.strip()[:4000] for n in body.presenter_notes]
+        if not fields:
+            raise HTTPException(422, "no fields to update")
 
-    # the override is the durable truth seed() restores from — write it first,
-    # so a failure after it leaves at worst a stale live item that the next
-    # startup heals, never a durable record that silently reverts the edit
-    item.update(fields)
-    for prefix in CUSTOM_CONTENT_PREFIXES:
-        custom_override = await store.get_override(f"{prefix}{item_id}")
-        if custom_override is not None:
-            # uploaded content: its override doc IS the source of truth
-            custom_override["doc"] = dict(item)
-            await store.set_override(f"{prefix}{item_id}", custom_override)
-            break
-    else:
-        override = await store.get_override(f"content:{item_id}") or {}
-        override.update({k: v for k, v in fields.items() if k in CONTENT_EDITABLE_FIELDS})
-        await store.set_override(f"content:{item_id}", override)
-    await store.upsert_content_item(item)
+        # the override is the durable truth seed() restores from — write it first,
+        # so a failure after it leaves at worst a stale live item that the next
+        # startup heals, never a durable record that silently reverts the edit
+        item.update(fields)
+        for prefix in CUSTOM_CONTENT_PREFIXES:
+            custom_override = await store.get_override(f"{prefix}{item_id}")
+            if custom_override is not None:
+                # uploaded content: its override doc IS the source of truth
+                custom_override["doc"] = dict(item)
+                await store.set_override(f"{prefix}{item_id}", custom_override)
+                break
+        else:
+            override = await store.get_override(f"content:{item_id}") or {}
+            override.update({k: v for k, v in fields.items() if k in CONTENT_EDITABLE_FIELDS})
+            await store.set_override(f"content:{item_id}", override)
+        await store.upsert_content_item(item)
     return {"content": await _content_with_flags()}
 
 
@@ -504,6 +515,33 @@ def _render_pdf_to_slides(pdf_path: Path, dest_dir: Path) -> int:
         return doc.page_count
 
 
+async def _assemble_slides(files: list[UploadFile], tmp_rel: str) -> list[str]:
+    """Validate an uploaded slide set (one PDF or ordered images) and write the
+    slide files into UPLOADS_DIR/tmp_rel; returns the slide filenames in order.
+    The caller owns tmp_rel and must remove it on any failure."""
+    tmp_dir = UPLOADS_DIR / tmp_rel
+    is_pdf = len(files) == 1 and (files[0].filename or "").lower().endswith(".pdf")
+    if not is_pdf and len(files) > MAX_DECK_SLIDES:
+        raise HTTPException(422, f"too many slides (max {MAX_DECK_SLIDES})")
+    if is_pdf:
+        await _save_upload(files[0], f"{tmp_rel}/source.pdf", MAX_PDF_BYTES)
+        try:
+            count = await asyncio.to_thread(_render_pdf_to_slides, tmp_dir / "source.pdf", tmp_dir)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        (tmp_dir / "source.pdf").unlink(missing_ok=True)
+        return [f"{n:02d}.png" for n in range(1, count + 1)]
+    # slide order follows the original filenames, sorted
+    ordered = sorted(files, key=lambda f: (f.filename or "").lower())
+    slide_names = []
+    for number, upload in enumerate(ordered, start=1):
+        ext = _file_ext(upload.filename, IMAGE_EXTS)
+        name = f"{number:02d}{ext}"
+        await _save_upload(upload, f"{tmp_rel}/{name}", MAX_IMAGE_BYTES)
+        slide_names.append(name)
+    return slide_names
+
+
 @router.post("/content/deck")
 async def upload_deck(
     files: list[UploadFile] = File(...),
@@ -518,35 +556,13 @@ async def upload_deck(
     if not files:
         raise HTTPException(422, "no files uploaded")
 
-    is_pdf = len(files) == 1 and (files[0].filename or "").lower().endswith(".pdf")
-    if not is_pdf and len(files) > MAX_DECK_SLIDES:
-        raise HTTPException(422, f"too many slides (max {MAX_DECK_SLIDES})")
-
     slug = re.sub(r"[^a-z0-9]+", "_", title_clean.lower()).strip("_")[:40] or "deck"
     deck_id = f"{slug}_{uuid.uuid4().hex[:6]}"
     # dotted temp dir: assembled out of sight, renamed into place only when whole
     tmp_rel = f"decks/.deck-upload-{uuid.uuid4().hex[:8]}"
     tmp_dir = UPLOADS_DIR / tmp_rel
     try:
-        if is_pdf:
-            await _save_upload(files[0], f"{tmp_rel}/source.pdf", MAX_PDF_BYTES)
-            try:
-                count = await asyncio.to_thread(
-                    _render_pdf_to_slides, tmp_dir / "source.pdf", tmp_dir
-                )
-            except ValueError as exc:
-                raise HTTPException(422, str(exc))
-            (tmp_dir / "source.pdf").unlink(missing_ok=True)
-            slide_names = [f"{n:02d}.png" for n in range(1, count + 1)]
-        else:
-            # slide order follows the original filenames, sorted
-            ordered = sorted(files, key=lambda f: (f.filename or "").lower())
-            slide_names = []
-            for number, upload in enumerate(ordered, start=1):
-                ext = _file_ext(upload.filename, IMAGE_EXTS)
-                name = f"{number:02d}{ext}"
-                await _save_upload(upload, f"{tmp_rel}/{name}", MAX_IMAGE_BYTES)
-                slide_names.append(name)
+        slide_names = await _assemble_slides(files, tmp_rel)
         tmp_dir.rename(UPLOADS_DIR / "decks" / deck_id)
     except BaseException:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -578,6 +594,111 @@ async def upload_deck(
                 pass
         shutil.rmtree(UPLOADS_DIR / "decks" / deck_id, ignore_errors=True)
         raise
+    return {"content": await _content_with_flags()}
+
+
+@router.post("/content/{item_id}/slides")
+async def replace_deck_slides(item_id: str, files: list[UploadFile] = File(...)):
+    """Replace a deck's slides with a new PDF or image set, keeping its identity.
+
+    Works on uploaded and seeded decks alike; for seeded decks the replacement
+    is recorded in the content override, so "Reset to defaults" restores the
+    original slides. Presenter notes survive when the new set has the same
+    number of slides; otherwise they reset (the talk track no longer lines up).
+    Each replacement lands in a fresh generation subdirectory, so asset URLs
+    change and browsers can't keep showing the old slides from cache."""
+    store = get_store()
+    items = {i["_id"]: i for i in await store.list_content_items()}
+    item = items.get(item_id)
+    if item is None or item.get("type") != "slide_deck":
+        raise HTTPException(404, "slide deck not found")
+    if not files:
+        raise HTTPException(422, "no files uploaded")
+
+    decks_root = (UPLOADS_DIR / "decks").resolve()
+    deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
+    if deck_dir == decks_root or not deck_dir.is_relative_to(decks_root):
+        raise HTTPException(422, "invalid deck id")
+
+    tmp_rel = f"decks/.deck-upload-{uuid.uuid4().hex[:8]}"
+    tmp_dir = UPLOADS_DIR / tmp_rel
+    try:
+        slide_names = await _assemble_slides(files, tmp_rel)
+    except BaseException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+
+    gen = uuid.uuid4().hex[:8]
+    async with _replace_lock:
+        # revalidate under the lock: the deck may have been deleted (or its
+        # notes edited) while the upload streamed and rendered outside it —
+        # registering against that stale read would resurrect a deleted deck
+        items = {i["_id"]: i for i in await store.list_content_items()}
+        item = items.get(item_id)
+        if item is None or item.get("type") != "slide_deck":
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise HTTPException(409, "this deck was deleted while the upload was in flight")
+
+        doc = dict(item)
+        doc["assets"] = [f"/uploads/decks/{item_id}/{gen}/{name}" for name in slide_names]
+        count_changed = len(slide_names) != len(item.get("assets") or [])
+        if count_changed:
+            doc["presenter_notes"] = []
+
+        custom_key, prior_custom = None, None
+        for prefix in CUSTOM_CONTENT_PREFIXES:
+            prior = await store.get_override(f"{prefix}{item_id}")
+            if prior is not None:
+                custom_key, prior_custom = f"{prefix}{item_id}", prior
+                break
+        prior_content = None if custom_key else await store.get_override(f"content:{item_id}")
+
+        try:
+            deck_dir.mkdir(parents=True, exist_ok=True)
+            tmp_dir.rename(deck_dir / gen)
+        except BaseException:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
+        try:
+            # override first — the durable record seed() restores from
+            if custom_key:
+                await store.set_override(custom_key, {**prior_custom, "doc": dict(doc)})
+            else:
+                merged = dict(prior_content or {})
+                merged["assets"] = doc["assets"]
+                if count_changed:
+                    merged["presenter_notes"] = []
+                await store.set_override(f"content:{item_id}", merged)
+            await store.upsert_content_item(doc)
+        except BaseException:
+            # the old slides were never touched: put the prior override back,
+            # then drop the new generation. If the restore itself fails, KEEP
+            # the new files — the stored override points at them, so the next
+            # seed heals the live item instead of dropping the deck
+            restored = False
+            try:
+                if custom_key:
+                    await store.set_override(custom_key, prior_custom)
+                elif prior_content is not None:
+                    await store.set_override(f"content:{item_id}", prior_content)
+                else:
+                    await store.delete_override(f"content:{item_id}")
+                restored = True
+            except Exception:
+                pass
+            if restored:
+                shutil.rmtree(deck_dir / gen, ignore_errors=True)
+            raise
+        # success — sweep the previous generation(s); best-effort, since the
+        # records are already consistent and delete/reset/the next replacement
+        # sweep this directory again
+        for child in deck_dir.iterdir():
+            if child.name == gen:
+                continue
+            try:
+                shutil.rmtree(child) if child.is_dir() else child.unlink()
+            except OSError:
+                log.warning("couldn't remove old slides at %s — will retry", child)
     return {"content": await _content_with_flags()}
 
 
@@ -629,23 +750,31 @@ async def upload_video(
 async def delete_content(item_id: str):
     """Delete uploaded content (a video or deck), including its files on disk."""
     store = get_store()
-    for prefix in CUSTOM_CONTENT_PREFIXES:
-        override = await store.get_override(f"{prefix}{item_id}")
-        if override is not None:
-            break
-    else:
-        raise HTTPException(422, "only content uploaded via settings can be deleted")
-    for asset in (override.get("doc") or {}).get("assets") or []:
-        # asset_file handles both /uploads/ and legacy /content/ paths
-        path = asset_file(asset)
-        if path is not None:
-            path.unlink(missing_ok=True)
-    # uploaded decks own a directory; remove it once its slides are gone
-    deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
-    if deck_dir.is_relative_to(UPLOADS_DIR.resolve()):
-        shutil.rmtree(deck_dir, ignore_errors=True)
-    await store.delete_override(f"{prefix}{item_id}")
-    await store.delete_content_item(item_id)
+    async with _replace_lock:
+        for prefix in CUSTOM_CONTENT_PREFIXES:
+            override = await store.get_override(f"{prefix}{item_id}")
+            if override is not None:
+                break
+        else:
+            raise HTTPException(422, "only content uploaded via settings can be deleted")
+        for asset in (override.get("doc") or {}).get("assets") or []:
+            # asset_file handles both /uploads/ and legacy /content/ paths
+            path = asset_file(asset)
+            if path is not None:
+                path.unlink(missing_ok=True)
+        # uploaded decks own a directory; remove it once its slides are gone.
+        # cleanup errors propagate BEFORE the records go: a failed delete stays
+        # retryable, and if it never is, the next seed() heals it (missing assets
+        # → the orphan branch drops the override and sweeps the directory).
+        # strict containment: a hostile "deck:.." override must not reach the
+        # decks root or above, and video deletions never touch this tree
+        if prefix == "deck:":
+            decks_root = (UPLOADS_DIR / "decks").resolve()
+            deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
+            if deck_dir != decks_root and deck_dir.is_relative_to(decks_root) and deck_dir.is_dir():
+                shutil.rmtree(deck_dir)
+        await store.delete_override(f"{prefix}{item_id}")
+        await store.delete_content_item(item_id)
     return {"content": await _content_with_flags()}
 
 
@@ -658,7 +787,19 @@ async def reset_override(key: str):
     if key not in RESETTABLE_KEYS and not key.startswith("content:"):
         raise HTTPException(422, "unknown override key")
     store = get_store()
-    await store.delete_override(key)
+    async with _replace_lock:
+        if key.startswith("content:"):
+            override = await store.get_override(key) or {}
+            if "assets" in override:
+                # the deck's slides were replaced: removing the replacement
+                # files restores the code slides. Errors propagate before the
+                # override is deleted, so a failed reset stays retryable
+                item_id = key.removeprefix("content:")
+                decks_root = (UPLOADS_DIR / "decks").resolve()
+                deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
+                if deck_dir != decks_root and deck_dir.is_relative_to(decks_root) and deck_dir.is_dir():
+                    shutil.rmtree(deck_dir)
+        await store.delete_override(key)
     # re-seed to restore the code defaults (remaining overrides are re-applied)
     await seed(store)
     return await _config()
