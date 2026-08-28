@@ -49,22 +49,28 @@ def mc_to_credits(mc: int) -> float:
     return round(mc / 1000, 2)
 
 
-async def _consume(service: str, units: float, usd: float, session_id: str | None) -> bool:
-    """Record one metered usage event; never raises. True once recorded."""
+async def _consume(
+    service: str, units: float, usd: float, session_id: str | None, ref: str | None = None
+) -> bool:
+    """Record one metered usage event; never raises. True once recorded.
+
+    A `ref` makes the recording idempotent (see store.adjust_credits) — a
+    retried call for the same usage can never charge twice, and an
+    already-recorded duplicate still counts as success."""
     try:
         mc = usd_to_mc(usd)
         if mc <= 0:
             return True  # nothing to record is not a failure
-        await get_store().adjust_credits(
-            -mc,
-            {
-                "kind": "use",
-                "service": service,
-                "units": round(units, 3),
-                "mc": mc,
-                "session_id": session_id,
-            },
-        )
+        entry = {
+            "kind": "use",
+            "service": service,
+            "units": round(units, 3),
+            "mc": mc,
+            "session_id": session_id,
+        }
+        if ref:
+            entry["ref"] = ref
+        await get_store().adjust_credits(-mc, entry)
         return True
     except Exception:
         log.exception("metering %s failed (usage not recorded)", service)
@@ -85,10 +91,13 @@ async def consume_tts(chars: int, session_id: str | None = None) -> bool:
     return await _consume("tts", chars, chars / 1000 * settings.tts_usd_per_1k_chars, session_id)
 
 
-async def consume_avatar(seconds: float, session_id: str | None = None) -> bool:
-    """Meter one closed LiveAvatar session by its wall-clock duration."""
+async def consume_avatar(seconds: float, ref: str | None = None) -> bool:
+    """Meter one closed LiveAvatar session by its wall-clock duration.
+
+    `ref` (the provider session id) keeps retried closes idempotent: however
+    many times the charge is attempted, one avatar session bills once."""
     return await _consume(
-        "avatar", seconds, seconds / 60 * settings.avatar_usd_per_min, session_id
+        "avatar", seconds, seconds / 60 * settings.avatar_usd_per_min, None, ref=ref
     )
 
 

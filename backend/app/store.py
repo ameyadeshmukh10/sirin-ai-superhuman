@@ -18,11 +18,19 @@ def _now() -> float:
 
 _EMPTY_WALLET = {"balance_mc": 0, "granted_mc": 0, "used_mc": {}, "units": {}}
 
+# How many applied idempotency refs the wallet doc remembers. Retries of the
+# same ref (Stripe webhook redelivery, a re-closed avatar link) arrive within
+# seconds, so a recent-window dedupe is ample — and it bounds document growth.
+_APPLIED_REFS_KEPT = 500
+
 
 def _ledger_entry(entry: dict) -> dict:
     """Normalize a credit-ledger entry: stamp time and a deterministic id for
-    ref'd grants (so e.g. a replayed Stripe webhook can't grant twice)."""
-    doc = {"_id": f"grant:{entry['ref']}" if entry.get("ref") else uuid.uuid4().hex, **entry}
+    ref'd entries (so e.g. a replayed Stripe webhook can't grant twice)."""
+    doc = {
+        "_id": f"{entry['kind']}:{entry['ref']}" if entry.get("ref") else uuid.uuid4().hex,
+        **entry,
+    }
     doc.setdefault("ts", _now())
     return doc
 
@@ -98,10 +106,15 @@ class MemoryStore:
         """Apply one credit-ledger entry (grant or use) to the wallet.
 
         Returns False without changing anything when the entry carries a `ref`
-        that was already applied (idempotent purchase crediting)."""
-        doc = {**_ledger_entry(entry), "applied": True}  # dict ops can't half-fail
-        if doc["_id"] in self.credit_ledger:
-            return False
+        that was already applied (idempotent purchase/usage recording)."""
+        doc = _ledger_entry(entry)
+        ref = entry.get("ref")
+        if ref:
+            refs = self.wallet.setdefault("applied_refs", [])
+            if ref in refs:
+                return False
+            refs.append(ref)
+            del refs[:-_APPLIED_REFS_KEPT]
         self.credit_ledger[doc["_id"]] = doc
         for key, inc in _wallet_incs(delta_mc, entry).items():
             parent, _, child = key.partition(".")
@@ -228,38 +241,42 @@ class MongoStore:
         """Apply one credit-ledger entry (grant or use) to the wallet.
 
         No multi-document transaction is assumed (standalone Mongo, the usual
-        Railway topology, has none), so consistency comes from an `applied`
-        flag on the ledger row: the wallet update is claimed exactly once, and
-        a row whose wallet write failed stays reclaimable, healed by the next
-        retry of the same `ref` (a replayed Stripe webhook). A duplicate whose
-        wallet update already landed returns False without granting twice."""
-        doc = {**_ledger_entry(entry), "applied": False}
+        Railway topology, has none). Idempotency for ref'd entries instead
+        rides single-document atomicity: the wallet doc itself records which
+        refs were applied, and one guarded update either increments AND
+        records the ref, or matches nothing — so a retry after any unknown
+        outcome (a replayed Stripe webhook, a re-closed avatar link) can never
+        double-apply, and there is no separate flag to drift. The ledger row
+        is the audit trail; the wallet is authoritative, so a lost row is
+        cosmetic and logged."""
+        doc = _ledger_entry(entry)
         incs = _wallet_incs(delta_mc, entry)
+        ref = entry.get("ref")
+        if ref:
+            try:
+                result = await self.db.credit_wallet.update_one(
+                    {"_id": "wallet", "applied_refs": {"$ne": ref}},
+                    {
+                        "$inc": incs,
+                        "$push": {"applied_refs": {"$each": [ref], "$slice": -_APPLIED_REFS_KEPT}},
+                    },
+                    upsert=True,
+                )
+            except Exception as exc:
+                # the wallet exists but the filter excluded it (ref already
+                # applied): the upsert then collides on _id — that IS the
+                # already-applied signal
+                if type(exc).__name__ == "DuplicateKeyError":
+                    return False
+                raise
+            if result.modified_count == 0 and result.upserted_id is None:
+                return False
+        else:
+            await self.db.credit_wallet.update_one({"_id": "wallet"}, {"$inc": incs}, upsert=True)
         try:
             await self.db.credit_ledger.insert_one(doc)
-        except Exception as exc:
-            if type(exc).__name__ != "DuplicateKeyError":
-                raise
-            # seen before: apply now only if the first attempt's wallet update
-            # never landed (find_one_and_update flips `applied` exactly once)
-            claimed = await self.db.credit_ledger.find_one_and_update(
-                {"_id": doc["_id"], "applied": False}, {"$set": {"applied": True}}
-            )
-            if claimed is None:
-                return False
-            try:
-                await self.db.credit_wallet.update_one(
-                    {"_id": "wallet"}, {"$inc": incs}, upsert=True
-                )
-            except BaseException:
-                # release the claim so yet another retry can still heal it
-                await self.db.credit_ledger.update_one(
-                    {"_id": doc["_id"]}, {"$set": {"applied": False}}
-                )
-                raise
-            return True
-        await self.db.credit_wallet.update_one({"_id": "wallet"}, {"$inc": incs}, upsert=True)
-        await self.db.credit_ledger.update_one({"_id": doc["_id"]}, {"$set": {"applied": True}})
+        except Exception:
+            log.exception("credit ledger write failed (wallet already updated)")
         return True
 
     async def list_credit_entries(self, limit: int = 12) -> list[dict]:

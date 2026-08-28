@@ -52,6 +52,7 @@ class LiveAvatarLink:
         self._closed = False
         self._metered = False
         self._final_age: float | None = None
+        self._usage_ref: str | None = None
         self.started_at = time.monotonic()
 
     @classmethod
@@ -186,9 +187,12 @@ class LiveAvatarLink:
     async def close(self, reason: str = "USER_CLOSED") -> None:
         """Stop the LiveAvatar session promptly — it bills per minute."""
         self._closed = True
-        # the billable duration ends now, whenever the metering below runs
+        # capture the billable duration and the stable usage ref NOW: teardown
+        # clears session_id, and a metering retry must reuse both unchanged
         if self._final_age is None:
             self._final_age = self.age
+        if self._usage_ref is None:
+            self._usage_ref = self.session_id
         for task in self._tasks:
             task.cancel()
         self._tasks = []
@@ -211,8 +215,9 @@ class LiveAvatarLink:
             self.session_id = None
         # meter AFTER teardown, so accounting can never delay or prevent
         # stopping the per-minute provider session. Charged exactly once: only
-        # a session that actually started (livekit_url) is billable, and a
-        # failed charge stays retryable by a later close
+        # a session that actually started (livekit_url) is billable, a failed
+        # charge stays retryable by a later close, and the usage ref makes the
+        # ledger recording itself idempotent across those retries
         if self.livekit_url and not self._metered:
-            if await consume_avatar(self._final_age):
+            if await consume_avatar(self._final_age, ref=self._usage_ref):
                 self._metered = True
