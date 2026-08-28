@@ -723,7 +723,8 @@ function fmtCredits(n: number): string {
  * options (Stripe packs or manual grants), and recent wallet activity.
  */
 function CreditsSection({ onAuthNeeded }: { onAuthNeeded: () => void }) {
-  const save = useSave(onAuthNeeded);
+  const save = useSave(onAuthNeeded); // manual-grant form
+  const billing = useSave(onAuthNeeded); // enforcement toggle + pack checkout
   const [summary, setSummary] = useState<CreditsSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [grantAmount, setGrantAmount] = useState("");
@@ -752,13 +753,13 @@ function CreditsSection({ onAuthNeeded }: { onAuthNeeded: () => void }) {
   }, [refresh, purchased]);
 
   const toggleEnforce = () =>
-    save.run(async () => {
+    billing.run(async () => {
       if (!summary) return;
       setSummary(await adminApi.updateCreditsSettings({ enabled: !summary.enabled }));
     });
 
   const buy = (pack: string) =>
-    save.run(async () => {
+    billing.run(async () => {
       const { url } = await adminApi.creditsCheckout(pack);
       window.location.href = url;
     });
@@ -844,11 +845,12 @@ function CreditsSection({ onAuthNeeded }: { onAuthNeeded: () => void }) {
               type="checkbox"
               checked={summary.enabled}
               onChange={toggleEnforce}
-              disabled={save.state === "saving"}
+              disabled={billing.state === "saving"}
               className="h-4 w-4 accent-[#8c7354]"
             />
             Pause new conversations when the balance runs out
           </label>
+          <ErrorText error={billing.error} />
 
           <div className="space-y-3 rounded-xl border border-dashed border-line p-4">
             <p className="text-sm font-medium">Buy credits</p>
@@ -859,7 +861,7 @@ function CreditsSection({ onAuthNeeded }: { onAuthNeeded: () => void }) {
                     key={pack.id}
                     type="button"
                     onClick={() => buy(pack.id)}
-                    disabled={save.state === "saving"}
+                    disabled={billing.state === "saving"}
                     className={btnGhostCls}
                   >
                     {pack.label} — {pack.credits.toLocaleString()} cr · $

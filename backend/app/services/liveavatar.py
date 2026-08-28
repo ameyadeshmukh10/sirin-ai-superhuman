@@ -27,7 +27,7 @@ from typing import Callable
 import httpx
 import websockets
 
-from .. import credits
+from ..credits import consume_avatar
 
 log = logging.getLogger("liveavatar")
 
@@ -51,6 +51,7 @@ class LiveAvatarLink:
         self._connected = asyncio.Event()
         self._closed = False
         self._metered = False
+        self._final_age: float | None = None
         self.started_at = time.monotonic()
 
     @classmethod
@@ -185,11 +186,9 @@ class LiveAvatarLink:
     async def close(self, reason: str = "USER_CLOSED") -> None:
         """Stop the LiveAvatar session promptly — it bills per minute."""
         self._closed = True
-        # meter the session's wall-clock duration exactly once; a link whose
-        # start never completed (no livekit_url) was never a billable session
-        if self.livekit_url and not self._metered:
-            self._metered = True
-            await credits.consume_avatar(self.age)
+        # the billable duration ends now, whenever the metering below runs
+        if self._final_age is None:
+            self._final_age = self.age
         for task in self._tasks:
             task.cancel()
         self._tasks = []
@@ -210,3 +209,10 @@ class LiveAvatarLink:
             except Exception as exc:
                 log.warning("session stop failed (may idle out on its own): %s", exc)
             self.session_id = None
+        # meter AFTER teardown, so accounting can never delay or prevent
+        # stopping the per-minute provider session. Charged exactly once: only
+        # a session that actually started (livekit_url) is billable, and a
+        # failed charge stays retryable by a later close
+        if self.livekit_url and not self._metered:
+            if await consume_avatar(self._final_age):
+                self._metered = True

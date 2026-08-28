@@ -99,7 +99,7 @@ class MemoryStore:
 
         Returns False without changing anything when the entry carries a `ref`
         that was already applied (idempotent purchase crediting)."""
-        doc = _ledger_entry(entry)
+        doc = {**_ledger_entry(entry), "applied": True}  # dict ops can't half-fail
         if doc["_id"] in self.credit_ledger:
             return False
         self.credit_ledger[doc["_id"]] = doc
@@ -227,19 +227,39 @@ class MongoStore:
     async def adjust_credits(self, delta_mc: int, entry: dict) -> bool:
         """Apply one credit-ledger entry (grant or use) to the wallet.
 
-        The ledger insert runs first: a `ref`'d entry has a deterministic _id,
-        so a duplicate (e.g. a replayed Stripe webhook) raises on insert and the
-        wallet is never credited twice. Returns False on such a duplicate."""
-        doc = _ledger_entry(entry)
+        No multi-document transaction is assumed (standalone Mongo, the usual
+        Railway topology, has none), so consistency comes from an `applied`
+        flag on the ledger row: the wallet update is claimed exactly once, and
+        a row whose wallet write failed stays reclaimable, healed by the next
+        retry of the same `ref` (a replayed Stripe webhook). A duplicate whose
+        wallet update already landed returns False without granting twice."""
+        doc = {**_ledger_entry(entry), "applied": False}
+        incs = _wallet_incs(delta_mc, entry)
         try:
             await self.db.credit_ledger.insert_one(doc)
         except Exception as exc:
-            if type(exc).__name__ == "DuplicateKeyError":
+            if type(exc).__name__ != "DuplicateKeyError":
+                raise
+            # seen before: apply now only if the first attempt's wallet update
+            # never landed (find_one_and_update flips `applied` exactly once)
+            claimed = await self.db.credit_ledger.find_one_and_update(
+                {"_id": doc["_id"], "applied": False}, {"$set": {"applied": True}}
+            )
+            if claimed is None:
                 return False
-            raise
-        await self.db.credit_wallet.update_one(
-            {"_id": "wallet"}, {"$inc": _wallet_incs(delta_mc, entry)}, upsert=True
-        )
+            try:
+                await self.db.credit_wallet.update_one(
+                    {"_id": "wallet"}, {"$inc": incs}, upsert=True
+                )
+            except BaseException:
+                # release the claim so yet another retry can still heal it
+                await self.db.credit_ledger.update_one(
+                    {"_id": doc["_id"]}, {"$set": {"applied": False}}
+                )
+                raise
+            return True
+        await self.db.credit_wallet.update_one({"_id": "wallet"}, {"$inc": incs}, upsert=True)
+        await self.db.credit_ledger.update_one({"_id": doc["_id"]}, {"$set": {"applied": True}})
         return True
 
     async def list_credit_entries(self, limit: int = 12) -> list[dict]:

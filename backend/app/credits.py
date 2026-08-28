@@ -49,12 +49,12 @@ def mc_to_credits(mc: int) -> float:
     return round(mc / 1000, 2)
 
 
-async def _consume(service: str, units: float, usd: float, session_id: str | None) -> None:
-    """Record one metered usage event; never raises."""
+async def _consume(service: str, units: float, usd: float, session_id: str | None) -> bool:
+    """Record one metered usage event; never raises. True once recorded."""
     try:
         mc = usd_to_mc(usd)
         if mc <= 0:
-            return
+            return True  # nothing to record is not a failure
         await get_store().adjust_credits(
             -mc,
             {
@@ -65,27 +65,31 @@ async def _consume(service: str, units: float, usd: float, session_id: str | Non
                 "session_id": session_id,
             },
         )
+        return True
     except Exception:
         log.exception("metering %s failed (usage not recorded)", service)
+        return False
 
 
-async def consume_claude(input_tokens: int, output_tokens: int, session_id: str | None) -> None:
+async def consume_claude(input_tokens: int, output_tokens: int, session_id: str | None) -> bool:
     """Meter one Claude API round from its reported token usage."""
     usd = (
         input_tokens / 1_000_000 * settings.claude_input_usd_per_mtok
         + output_tokens / 1_000_000 * settings.claude_output_usd_per_mtok
     )
-    await _consume("claude", input_tokens + output_tokens, usd, session_id)
+    return await _consume("claude", input_tokens + output_tokens, usd, session_id)
 
 
-async def consume_tts(chars: int, session_id: str | None = None) -> None:
+async def consume_tts(chars: int, session_id: str | None = None) -> bool:
     """Meter one successfully synthesized TTS sentence by character count."""
-    await _consume("tts", chars, chars / 1000 * settings.tts_usd_per_1k_chars, session_id)
+    return await _consume("tts", chars, chars / 1000 * settings.tts_usd_per_1k_chars, session_id)
 
 
-async def consume_avatar(seconds: float, session_id: str | None = None) -> None:
+async def consume_avatar(seconds: float, session_id: str | None = None) -> bool:
     """Meter one closed LiveAvatar session by its wall-clock duration."""
-    await _consume("avatar", seconds, seconds / 60 * settings.avatar_usd_per_min, session_id)
+    return await _consume(
+        "avatar", seconds, seconds / 60 * settings.avatar_usd_per_min, session_id
+    )
 
 
 async def credits_config(store) -> dict:
@@ -98,15 +102,24 @@ async def credits_config(store) -> dict:
 
 
 async def blocked(store) -> bool:
-    """True when enforcement is on and the wallet is empty; never raises."""
+    """True when enforcement is on and the wallet is empty; never raises.
+
+    Fails closed once enforcement is known to be on: the operator opted into
+    a hard spend limit, so an unreadable wallet blocks rather than letting
+    unmetered usage through. An unreadable *config* fails open — enforcement
+    may not even be in use, and blocking every visitor on any store hiccup
+    would be worse."""
     try:
         if not (await credits_config(store))["enabled"]:
             return False
-        wallet = await store.get_wallet()
-        return wallet["balance_mc"] <= 0
     except Exception:
-        log.exception("credit check failed — allowing the request")
+        log.exception("credit config read failed — allowing the request")
         return False
+    try:
+        return (await store.get_wallet())["balance_mc"] <= 0
+    except Exception:
+        log.exception("wallet read failed while enforcement is on — blocking")
+        return True
 
 
 async def summary(store) -> dict:

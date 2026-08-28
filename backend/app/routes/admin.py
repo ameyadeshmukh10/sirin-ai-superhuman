@@ -28,8 +28,8 @@ import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import credits
 from ..config import UPLOADS_DIR, asset_file, settings
+from ..credits import summary as credits_summary
 from ..orchestrator.prompt import GTM_KNOWLEDGE
 from ..seed_data import CONTENT_EDITABLE_FIELDS, PERSONA, PERSONA_EDITABLE_FIELDS, seed
 from ..store import get_store
@@ -453,21 +453,30 @@ class CreditsSettingsUpdate(BaseModel):
     low_threshold: int | None = Field(default=None, ge=0, le=1_000_000)
 
 
+def _require_wallet_admin() -> None:
+    """Wallet mutations (grants, enforcement) need a real token: the open-access
+    dev mode that's fine for content edits would let anyone on a public deploy
+    mint credits or switch enforcement off."""
+    if not settings.admin_token:
+        raise HTTPException(403, "set ADMIN_TOKEN to manage credits")
+
+
 @router.get("/credits")
 async def get_credits():
     """Wallet balance, per-service consumption, recent activity, and config."""
-    return await credits.summary(get_store())
+    return await credits_summary(get_store())
 
 
 @router.post("/credits/grant")
 async def grant_credits(body: CreditsGrant):
     """Add credits manually — the dev/offline path next to Stripe purchases."""
+    _require_wallet_admin()
     store = get_store()
     mc = body.credits * 1000
     await store.adjust_credits(
         mc, {"kind": "grant", "mc": mc, "note": _clean_str(body.note, max_len=200) or "manual grant"}
     )
-    return await credits.summary(store)
+    return await credits_summary(store)
 
 
 @router.post("/credits/checkout")
@@ -479,6 +488,7 @@ async def credits_checkout(body: CreditsCheckout, request: Request):
 @router.put("/credits/settings")
 async def update_credits_settings(body: CreditsSettingsUpdate):
     """Toggle balance enforcement and the low-balance warning threshold."""
+    _require_wallet_admin()
     store = get_store()
     override = await store.get_override("credits") or {}
     if body.enabled is not None:
@@ -486,7 +496,7 @@ async def update_credits_settings(body: CreditsSettingsUpdate):
     if body.low_threshold is not None:
         override["low_threshold"] = body.low_threshold
     await store.set_override("credits", override)
-    return await credits.summary(store)
+    return await credits_summary(store)
 
 
 # ---------- content items ----------

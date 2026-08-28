@@ -65,19 +65,26 @@ async def create_checkout(pack_id: str, base_url: str) -> str:
 
 
 def _verify_signature(payload: bytes, header: str, secret: str) -> bool:
-    """Verify a Stripe-Signature header (t=...,v1=... HMAC-SHA256 scheme)."""
-    parts = dict(
-        part.split("=", 1) for part in header.split(",") if "=" in part
-    )
-    timestamp, signature = parts.get("t"), parts.get("v1")
-    if not timestamp or not signature or not timestamp.isdigit():
+    """Verify a Stripe-Signature header (t=...,v1=... HMAC-SHA256 scheme).
+
+    During signing-secret rotation Stripe includes one v1 signature per active
+    secret — the request is valid when ANY of them matches ours."""
+    timestamp = ""
+    signatures: list[str] = []
+    for part in header.split(","):
+        key, _, value = part.strip().partition("=")
+        if key == "t":
+            timestamp = value
+        elif key == "v1":
+            signatures.append(value)
+    if not timestamp.isdigit() or not signatures:
         return False
     if abs(time.time() - int(timestamp)) > WEBHOOK_TOLERANCE_SECS:
         return False
     expected = hmac.new(
         secret.encode(), f"{timestamp}.".encode() + payload, hashlib.sha256
     ).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    return any(hmac.compare_digest(expected, signature) for signature in signatures)
 
 
 @router.post("/stripe-webhook")

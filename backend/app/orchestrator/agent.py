@@ -19,8 +19,9 @@ import uuid
 from anthropic import AsyncAnthropic
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .. import credits
 from ..config import Settings
+from ..credits import blocked as credits_blocked
+from ..credits import consume_claude
 from ..services.liveavatar import LiveAvatarLink
 from ..services.tts import TtsRelay
 from . import tools as tools_mod
@@ -448,7 +449,11 @@ class SessionRunner:
                 self.session["_id"], {"role": "user", "text": user_text, "source": source}
             )
         self.emit({"type": "state", "status": "thinking"}, gen)
-        await self._ensure_avatar(gen)
+        # checked before _ensure_avatar so an empty wallet can never cause a
+        # fresh (billable) LiveAvatar session to be created for a refused turn
+        out_of_credits = self.claude is not None and await credits_blocked(self.store)
+        if not out_of_credits:
+            await self._ensure_avatar(gen)
 
         seq = _Seq()
         relay = self._new_relay(gen, seq)
@@ -470,7 +475,7 @@ class SessionRunner:
             if self.claude is None:
                 dispatch_sentence(FALLBACK_REPLY)
                 stop_reason = "end_turn"
-            elif await credits.blocked(self.store):
+            elif out_of_credits:
                 # metering is post-hoc, so the wallet can only be found empty at
                 # a turn boundary; the polite line itself is a tiny overdraft
                 dispatch_sentence(OUT_OF_CREDITS_REPLY)
@@ -519,7 +524,7 @@ class SessionRunner:
                             dispatch_sentence(tail)
                 final = await stream.get_final_message()
 
-            await credits.consume_claude(
+            await consume_claude(
                 final.usage.input_tokens, final.usage.output_tokens, self.session["_id"]
             )
             stop_reason = final.stop_reason or "end_turn"

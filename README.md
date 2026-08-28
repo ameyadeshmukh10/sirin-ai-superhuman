@@ -99,7 +99,9 @@ where the whole experience can be edited at runtime — no redeploy needed:
   `POST /api/billing/stripe-webhook` for `checkout.session.completed`) or
   added manually. An optional enforcement toggle pauses new conversations
   gracefully when the balance runs out — metering is post-hoc, so tiny
-  overdrafts at turn boundaries are expected.
+  overdrafts at turn boundaries are expected. Wallet mutations (manual grants,
+  the enforcement toggle) always require `ADMIN_TOKEN` to be set, even in
+  otherwise-open local dev — an open deploy must not be able to mint credits.
 
 Edits are stored as override documents on top of the seeded defaults
 (`backend/app/seed_data.py` stays the base; `seed()` re-applies overrides on

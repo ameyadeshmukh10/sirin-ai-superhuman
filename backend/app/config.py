@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -47,13 +48,15 @@ class Settings(BaseSettings):
 
     # ---- credit-based consumption (see app/credits.py) ----
     # 1 credit = this many USD of metered provider cost (default: 1 credit = 1¢).
-    credit_usd: float = 0.01
+    # Validated at startup: a zero/negative/non-finite price would invert or
+    # silently break the accounting.
+    credit_usd: float = Field(default=0.01, gt=0, allow_inf_nan=False)
     # Provider price table used to convert raw usage into credits. Defaults match
     # common published rates; tune them to your actual plans.
-    claude_input_usd_per_mtok: float = 3.0
-    claude_output_usd_per_mtok: float = 15.0
-    tts_usd_per_1k_chars: float = 0.15
-    avatar_usd_per_min: float = 0.50
+    claude_input_usd_per_mtok: float = Field(default=3.0, ge=0, allow_inf_nan=False)
+    claude_output_usd_per_mtok: float = Field(default=15.0, ge=0, allow_inf_nan=False)
+    tts_usd_per_1k_chars: float = Field(default=0.15, ge=0, allow_inf_nan=False)
+    avatar_usd_per_min: float = Field(default=0.50, ge=0, allow_inf_nan=False)
     # Stripe Checkout for buying credit packs from the settings view. Leave unset
     # to run without purchases (credits can still be granted manually). The
     # webhook must be pointed at POST /api/billing/stripe-webhook and subscribed
