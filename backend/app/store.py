@@ -18,9 +18,15 @@ def _now() -> float:
 
 _EMPTY_WALLET = {"balance_mc": 0, "granted_mc": 0, "used_mc": {}, "units": {}}
 
-# How many applied idempotency refs the wallet doc remembers. Retries of the
-# same ref (Stripe webhook redelivery, a re-closed avatar link) arrive within
-# seconds, so a recent-window dedupe is ample — and it bounds document growth.
+# Idempotency for ref'd entries is two-layer. The DURABLE layer is the ledger
+# row's deterministic _id: it exists exactly when an entry fully completed, is
+# checked first, and never expires — so a replay of any completed entry is
+# refused forever. The ATOMIC layer is a bounded ref window inside the wallet
+# doc, guarding the increment itself (single-document atomicity) for the cases
+# the ledger can't see yet: concurrent first deliveries, and a crash between
+# the wallet update and the ledger write. That gap closes on the next replay
+# (the window match repairs the missing ledger row), so the window only needs
+# to outlast one retry cycle — well within this many subsequent ref'd entries.
 _APPLIED_REFS_KEPT = 500
 
 
@@ -110,8 +116,12 @@ class MemoryStore:
         doc = _ledger_entry(entry)
         ref = entry.get("ref")
         if ref:
+            if doc["_id"] in self.credit_ledger:
+                return False  # durable layer: this entry fully completed before
             refs = self.wallet.setdefault("applied_refs", [])
             if ref in refs:
+                # applied but the ledger row is missing — repair it, no re-apply
+                self.credit_ledger[doc["_id"]] = doc
                 return False
             refs.append(ref)
             del refs[:-_APPLIED_REFS_KEPT]
@@ -253,6 +263,12 @@ class MongoStore:
         incs = _wallet_incs(delta_mc, entry)
         ref = entry.get("ref")
         if ref:
+            # durable layer: a ledger row with this deterministic _id exists
+            # exactly when the entry fully completed — refuse replays forever,
+            # however long ago and whatever the ref window has since seen
+            if await self.db.credit_ledger.find_one({"_id": doc["_id"]}, {"_id": 1}):
+                return False
+            applied = False
             try:
                 result = await self.db.credit_wallet.update_one(
                     {"_id": "wallet", "applied_refs": {"$ne": ref}},
@@ -262,21 +278,29 @@ class MongoStore:
                     },
                     upsert=True,
                 )
+                applied = result.modified_count > 0 or result.upserted_id is not None
             except Exception as exc:
                 # the wallet exists but the filter excluded it (ref already
                 # applied): the upsert then collides on _id — that IS the
                 # already-applied signal
-                if type(exc).__name__ == "DuplicateKeyError":
-                    return False
-                raise
-            if result.modified_count == 0 and result.upserted_id is None:
+                if type(exc).__name__ != "DuplicateKeyError":
+                    raise
+            if not applied:
+                # the wallet applied this ref earlier but its ledger row is
+                # missing (the write below failed then) — repair it, no re-apply
+                try:
+                    await self.db.credit_ledger.replace_one(
+                        {"_id": doc["_id"]}, doc, upsert=True
+                    )
+                except Exception:
+                    log.exception("credit ledger repair failed (will retry on next replay)")
                 return False
         else:
             await self.db.credit_wallet.update_one({"_id": "wallet"}, {"$inc": incs}, upsert=True)
         try:
             await self.db.credit_ledger.insert_one(doc)
         except Exception:
-            log.exception("credit ledger write failed (wallet already updated)")
+            log.exception("credit ledger write failed (repaired on the next replay)")
         return True
 
     async def list_credit_entries(self, limit: int = 12) -> list[dict]:
