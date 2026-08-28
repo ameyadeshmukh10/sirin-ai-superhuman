@@ -360,6 +360,7 @@ class SessionRunner:
                 emit_bytes,
                 output_format=self.settings.avatar_tts_output_format,
                 sample_rate=self.settings.avatar_tts_sample_rate,
+                voice_id=self.persona.get("voice_id"),
             )
         self._pace_buffer = None
         return TtsRelay(
@@ -367,6 +368,7 @@ class SessionRunner:
             gen,
             lambda event: self.emit(event, gen),
             lambda n, chunk: self.emit_bytes(gen, n, chunk),
+            voice_id=self.persona.get("voice_id"),
         )
 
     def _emit_action(self, ui_event: dict, gen: int, n: int) -> None:
