@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from .. import credits
 from ..seed_data import PERSONA
 from ..store import get_store
 
@@ -46,6 +47,9 @@ async def get_persona():
 async def create_session():
     """Create a new session and return its id with the persona."""
     store = get_store()
+    if await credits.blocked(store):
+        # enforcement is opt-in (settings view) — see app/credits.py
+        raise HTTPException(402, "out of credits")
     persona = await store.get_persona(PERSONA["_id"])
     if persona is None:
         raise HTTPException(500, "persona not seeded")

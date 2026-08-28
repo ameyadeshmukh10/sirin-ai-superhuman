@@ -27,6 +27,8 @@ from typing import Callable
 import httpx
 import websockets
 
+from .. import credits
+
 log = logging.getLogger("liveavatar")
 
 CONNECTED_TIMEOUT = 12.0
@@ -48,6 +50,7 @@ class LiveAvatarLink:
         self._tasks: list[asyncio.Task] = []
         self._connected = asyncio.Event()
         self._closed = False
+        self._metered = False
         self.started_at = time.monotonic()
 
     @classmethod
@@ -182,6 +185,11 @@ class LiveAvatarLink:
     async def close(self, reason: str = "USER_CLOSED") -> None:
         """Stop the LiveAvatar session promptly — it bills per minute."""
         self._closed = True
+        # meter the session's wall-clock duration exactly once; a link whose
+        # start never completed (no livekit_url) was never a billable session
+        if self.livekit_url and not self._metered:
+            self._metered = True
+            await credits.consume_avatar(self.age)
         for task in self._tasks:
             task.cancel()
         self._tasks = []

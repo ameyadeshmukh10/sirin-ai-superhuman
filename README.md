@@ -90,6 +90,16 @@ where the whole experience can be edited at runtime — no redeploy needed:
   same, and "Reset to defaults" brings a seeded deck's original slides back.
 - **Videos**: upload MP4/WebM clips with a title and description — the AI can
   then play them via `play_video` — plus edit or delete them.
+- **Credits & usage**: every conversation's API consumption (Claude tokens,
+  ElevenLabs characters, avatar minutes) is metered into a credit wallet
+  (1 credit ≈ 1¢ of provider cost — tunable, see `.env.example`). The section
+  shows the remaining balance, consumption per service, and recent activity;
+  credits are bought as Stripe Checkout packs (when `STRIPE_SECRET_KEY` /
+  `STRIPE_WEBHOOK_SECRET` are set, with the webhook pointed at
+  `POST /api/billing/stripe-webhook` for `checkout.session.completed`) or
+  added manually. An optional enforcement toggle pauses new conversations
+  gracefully when the balance runs out — metering is post-hoc, so tiny
+  overdrafts at turn boundaries are expected.
 
 Edits are stored as override documents on top of the seeded defaults
 (`backend/app/seed_data.py` stays the base; `seed()` re-applies overrides on
@@ -129,6 +139,10 @@ two backend content files above.
    - `MONGODB_URL` = `${{ MongoDB.MONGO_URL }}` (private-network reference var)
    - `ADMIN_TOKEN` (recommended: protects the `/settings` view's API)
    - optional: `ANTHROPIC_MODEL`, `ELEVENLABS_VOICE_ID`
+   - selling credits (optional): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+     `PUBLIC_BASE_URL` (the app's domain), with a Stripe webhook pointed at
+     `https://<domain>/api/billing/stripe-webhook` for
+     `checkout.session.completed`
 4. To keep settings-view uploads (logo, persona photo, videos) across
    redeploys, add a **volume** to the app service mounted at `/srv/uploads`
    (or mount elsewhere and set `UPLOADS_DIR` to that path).

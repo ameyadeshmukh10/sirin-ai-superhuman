@@ -17,6 +17,7 @@ import {
   type AdminPersona,
   type AvatarItem,
   type AvatarState,
+  type CreditsSummary,
 } from "../lib/adminApi";
 import { useBrand } from "../lib/useBrand";
 
@@ -702,6 +703,238 @@ function MessagingSection({
   );
 }
 
+// ---------- credits ----------
+
+const SERVICE_LABELS: Record<string, string> = {
+  claude: "Conversation",
+  tts: "Voice",
+  avatar: "Avatar",
+};
+
+/**
+ * Format a credit amount for display with thousands separators.
+ */
+function fmtCredits(n: number): string {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+/**
+ * Section showing the credit balance, per-service consumption, purchase
+ * options (Stripe packs or manual grants), and recent wallet activity.
+ */
+function CreditsSection({ onAuthNeeded }: { onAuthNeeded: () => void }) {
+  const save = useSave(onAuthNeeded);
+  const [summary, setSummary] = useState<CreditsSummary | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [grantAmount, setGrantAmount] = useState("");
+  const purchased = useMemo(
+    () => new URLSearchParams(window.location.search).get("credits") === "purchased",
+    [],
+  );
+
+  const refresh = useCallback(async () => {
+    try {
+      setSummary(await adminApi.getCredits());
+      setLoadError(null);
+    } catch (err) {
+      if (err instanceof AdminAuthError) onAuthNeeded();
+      else setLoadError(err instanceof Error ? err.message : "Couldn't load credits.");
+    }
+  }, [onAuthNeeded]);
+
+  useEffect(() => {
+    refresh();
+    if (purchased) {
+      // the Stripe webhook can land a few seconds after the redirect back
+      const timers = [3000, 8000].map((ms) => window.setTimeout(refresh, ms));
+      return () => timers.forEach((t) => window.clearTimeout(t));
+    }
+  }, [refresh, purchased]);
+
+  const toggleEnforce = () =>
+    save.run(async () => {
+      if (!summary) return;
+      setSummary(await adminApi.updateCreditsSettings({ enabled: !summary.enabled }));
+    });
+
+  const buy = (pack: string) =>
+    save.run(async () => {
+      const { url } = await adminApi.creditsCheckout(pack);
+      window.location.href = url;
+    });
+
+  const grant = (e: React.FormEvent) => {
+    e.preventDefault();
+    save.run(async () => {
+      const amount = Math.floor(Number(grantAmount));
+      if (!Number.isFinite(amount) || amount < 1) throw new Error("Enter a credit amount.");
+      setSummary(await adminApi.grantCredits(amount));
+      setGrantAmount("");
+    });
+  };
+
+  const usedTotal = summary
+    ? summary.used.claude.credits + summary.used.tts.credits + summary.used.avatar.credits
+    : 0;
+  const low = summary && summary.balance < summary.low_threshold;
+
+  return (
+    <Section
+      title="Credits & usage"
+      hint="Every conversation consumes credits for the AI, voice and avatar services behind it (1 credit ≈ 1¢ of usage). Buy credits here; when enforcement is on, the experience pauses politely once the balance runs out."
+    >
+      {purchased && (
+        <p className="rounded-xl border border-moss/30 bg-moss/10 px-4 py-3 text-[13px] text-body">
+          Payment received — credits appear below as soon as Stripe confirms it (a few
+          seconds).
+        </p>
+      )}
+      {loadError && <ErrorText error={loadError} />}
+      {summary && (
+        <>
+          {summary.enabled && summary.balance <= 0 && (
+            <p className="rounded-xl border border-red-800/25 bg-red-800/5 px-4 py-3 text-[13px] text-red-900">
+              The balance is empty and enforcement is on — new conversations are paused
+              until credits are added.
+            </p>
+          )}
+          {summary.enabled && summary.balance > 0 && low && (
+            <p className="rounded-xl border border-amber-700/25 bg-amber-600/10 px-4 py-3 text-[13px] text-amber-900">
+              Running low: fewer than {fmtCredits(summary.low_threshold)} credits remain.
+            </p>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-line bg-panel-2/40 p-5">
+              <p className="eyebrow">Remaining</p>
+              <p className="mt-1 font-display text-4xl font-medium">
+                {fmtCredits(summary.balance)}
+                <span className="ml-2 text-base text-muted">credits</span>
+              </p>
+              <p className="mt-1 text-[12px] text-muted">
+                ≈ ${fmtCredits(summary.balance * summary.credit_usd)} of API usage ·{" "}
+                {fmtCredits(summary.granted)} granted all-time
+              </p>
+            </div>
+            <div className="rounded-xl border border-line bg-panel-2/40 p-5">
+              <p className="eyebrow">Consumed so far</p>
+              <p className="mt-1 font-display text-4xl font-medium">
+                {fmtCredits(usedTotal)}
+                <span className="ml-2 text-base text-muted">credits</span>
+              </p>
+              <div className="mt-2 space-y-0.5 text-[12px] text-muted">
+                <p>
+                  Conversation {fmtCredits(summary.used.claude.credits)} cr ·{" "}
+                  {summary.used.claude.tokens.toLocaleString()} tokens
+                </p>
+                <p>
+                  Voice {fmtCredits(summary.used.tts.credits)} cr ·{" "}
+                  {summary.used.tts.chars.toLocaleString()} characters
+                </p>
+                <p>
+                  Avatar {fmtCredits(summary.used.avatar.credits)} cr ·{" "}
+                  {summary.used.avatar.minutes.toLocaleString()} min
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={summary.enabled}
+              onChange={toggleEnforce}
+              disabled={save.state === "saving"}
+              className="h-4 w-4 accent-[#8c7354]"
+            />
+            Pause new conversations when the balance runs out
+          </label>
+
+          <div className="space-y-3 rounded-xl border border-dashed border-line p-4">
+            <p className="text-sm font-medium">Buy credits</p>
+            {summary.stripe_configured ? (
+              <div className="flex flex-wrap gap-3">
+                {summary.packs.map((pack) => (
+                  <button
+                    key={pack.id}
+                    type="button"
+                    onClick={() => buy(pack.id)}
+                    disabled={save.state === "saving"}
+                    className={btnGhostCls}
+                  >
+                    {pack.label} — {pack.credits.toLocaleString()} cr · $
+                    {(pack.usd_cents / 100).toLocaleString()}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[12px] leading-relaxed text-muted">
+                Card checkout is not configured. Set STRIPE_SECRET_KEY and
+                STRIPE_WEBHOOK_SECRET on the backend to sell credit packs here — or add
+                credits manually below.
+              </p>
+            )}
+            <form onSubmit={grant} className="flex items-end gap-3">
+              <div className="w-44">
+                <Field label="Add credits manually">
+                  <input
+                    type="number"
+                    min={1}
+                    value={grantAmount}
+                    onChange={(e) => setGrantAmount(e.target.value)}
+                    placeholder="e.g. 1000"
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+              <SaveButton state={save.state} label="Add" />
+              <ErrorText error={save.error} />
+            </form>
+          </div>
+
+          {summary.recent.length > 0 && (
+            <div>
+              <p className="mb-2 text-[12px] font-medium tracking-wide text-muted">
+                Recent activity
+              </p>
+              <ul className="divide-y divide-line rounded-xl border border-line text-[13px]">
+                {summary.recent.map((entry, i) => (
+                  <li key={i} className="flex items-center gap-3 px-4 py-2">
+                    <span className={entry.kind === "grant" ? "text-moss" : "text-body"}>
+                      {entry.kind === "grant" ? "+" : "−"}
+                      {fmtCredits(entry.credits)} cr
+                    </span>
+                    <span className="text-muted">
+                      {entry.kind === "grant"
+                        ? (entry.note ?? "granted")
+                        : `${SERVICE_LABELS[entry.service ?? ""] ?? entry.service} · ${
+                            entry.service === "avatar"
+                              ? `${Math.round((entry.units ?? 0) / 6) / 10} min`
+                              : `${Math.round(entry.units ?? 0).toLocaleString()} ${
+                                  entry.service === "claude" ? "tokens" : "chars"
+                                }`
+                          }`}
+                    </span>
+                    <span className="ml-auto text-[11px] text-muted">
+                      {new Date(entry.ts * 1000).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+      {!summary && !loadError && <p className="text-sm text-muted">Loading…</p>}
+    </Section>
+  );
+}
+
 // ---------- content: slide decks ----------
 
 /**
@@ -1218,6 +1451,7 @@ export default function SettingsPage() {
               onAuthNeeded={onAuthNeeded}
             />
             <AvatarSection avatar={config.avatar} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
+            <CreditsSection onAuthNeeded={onAuthNeeded} />
             <MessagingSection gtm={config.gtm} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
 
             <Section

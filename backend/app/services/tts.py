@@ -14,6 +14,7 @@ from typing import Awaitable, Callable
 
 import httpx
 
+from .. import credits
 from ..config import Settings
 
 log = logging.getLogger("tts")
@@ -70,6 +71,8 @@ class TtsRelay:
                     try:
                         await self._stream_once(text, prev, queue)
                         queue.put_nowait(_DONE)
+                        # meter only what actually synthesized (failures are free)
+                        await credits.consume_tts(len(text))
                         return
                     except asyncio.CancelledError:
                         raise

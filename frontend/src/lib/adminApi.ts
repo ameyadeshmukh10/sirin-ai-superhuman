@@ -53,6 +53,38 @@ export type AdminConfig = {
   content: AdminContentItem[];
 };
 
+export type CreditPack = {
+  id: string;
+  label: string;
+  credits: number;
+  usd_cents: number;
+};
+
+export type CreditEntry = {
+  ts: number;
+  kind: "grant" | "use";
+  service: "claude" | "tts" | "avatar" | null;
+  units: number | null;
+  credits: number;
+  note: string | null;
+};
+
+export type CreditsSummary = {
+  balance: number;
+  granted: number;
+  used: {
+    claude: { credits: number; tokens: number };
+    tts: { credits: number; chars: number };
+    avatar: { credits: number; minutes: number };
+  };
+  credit_usd: number;
+  enabled: boolean;
+  low_threshold: number;
+  stripe_configured: boolean;
+  packs: CreditPack[];
+  recent: CreditEntry[];
+};
+
 export class AdminAuthError extends Error {
   constructor() {
     super("admin token required");
@@ -170,6 +202,14 @@ export const adminApi = {
   },
   deleteContent: (id: string) =>
     request<{ content: AdminContentItem[] }>(`/api/admin/content/${id}`, { method: "DELETE" }),
+
+  getCredits: () => request<CreditsSummary>("/api/admin/credits"),
+  grantCredits: (credits: number, note?: string) =>
+    request<CreditsSummary>("/api/admin/credits/grant", json("POST", { credits, note })),
+  creditsCheckout: (pack: string) =>
+    request<{ url: string }>("/api/admin/credits/checkout", json("POST", { pack })),
+  updateCreditsSettings: (fields: { enabled?: boolean; low_threshold?: number }) =>
+    request<CreditsSummary>("/api/admin/credits/settings", json("PUT", fields)),
 
   resetOverride: (key: "persona" | "brand" | "gtm" | `content:${string}`) =>
     request<AdminConfig>(`/api/admin/overrides/${key}`, { method: "DELETE" }),

@@ -45,6 +45,25 @@ class Settings(BaseSettings):
     mongodb_url: str = ""
     port: int = 8000
 
+    # ---- credit-based consumption (see app/credits.py) ----
+    # 1 credit = this many USD of metered provider cost (default: 1 credit = 1¢).
+    credit_usd: float = 0.01
+    # Provider price table used to convert raw usage into credits. Defaults match
+    # common published rates; tune them to your actual plans.
+    claude_input_usd_per_mtok: float = 3.0
+    claude_output_usd_per_mtok: float = 15.0
+    tts_usd_per_1k_chars: float = 0.15
+    avatar_usd_per_min: float = 0.50
+    # Stripe Checkout for buying credit packs from the settings view. Leave unset
+    # to run without purchases (credits can still be granted manually). The
+    # webhook must be pointed at POST /api/billing/stripe-webhook and subscribed
+    # to checkout.session.completed.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    # Absolute base URL of this deployment (e.g. https://demo.example.com), used
+    # for Stripe success/cancel redirects. Falls back to the request's origin.
+    public_base_url: str = ""
+
     # When set, /api/admin/* (the settings view's API) requires this token in an
     # X-Admin-Token header. Leave empty for open access in local dev.
     admin_token: str = ""

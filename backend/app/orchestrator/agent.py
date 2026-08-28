@@ -19,6 +19,7 @@ import uuid
 from anthropic import AsyncAnthropic
 from fastapi import WebSocket, WebSocketDisconnect
 
+from .. import credits
 from ..config import Settings
 from ..services.liveavatar import LiveAvatarLink
 from ..services.tts import TtsRelay
@@ -31,6 +32,11 @@ log = logging.getLogger("agent")
 FALLBACK_REPLY = (
     "I'm having trouble reaching my brain right now. Give me a moment and try again, "
     "or use the Book a Meeting button to reach a human."
+)
+
+OUT_OF_CREDITS_REPLY = (
+    "This experience has used up its available credits for now. Please check back "
+    "soon, or use the Book a Meeting button to reach a human directly."
 )
 
 NUDGE_INSTRUCTION = (
@@ -464,6 +470,11 @@ class SessionRunner:
             if self.claude is None:
                 dispatch_sentence(FALLBACK_REPLY)
                 stop_reason = "end_turn"
+            elif await credits.blocked(self.store):
+                # metering is post-hoc, so the wallet can only be found empty at
+                # a turn boundary; the polite line itself is a tiny overdraft
+                dispatch_sentence(OUT_OF_CREDITS_REPLY)
+                stop_reason = "end_turn"
             else:
                 stop_reason = await self._claude_loop(gen, user_text, dispatch_sentence, seq)
             await relay.close()
@@ -508,6 +519,9 @@ class SessionRunner:
                             dispatch_sentence(tail)
                 final = await stream.get_final_message()
 
+            await credits.consume_claude(
+                final.usage.input_tokens, final.usage.output_tokens, self.session["_id"]
+            )
             stop_reason = final.stop_reason or "end_turn"
             if stop_reason != "tool_use":
                 break
