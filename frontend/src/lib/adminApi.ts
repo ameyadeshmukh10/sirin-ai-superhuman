@@ -2,7 +2,7 @@
 // ADMIN_TOKEN set, requests need the token — held in memory and sent as an
 // X-Admin-Token header; a 401 throws AdminAuthError so the page can prompt.
 
-import type { Wordmark } from "../brand";
+import type { BrandTheme, Wordmark } from "../brand";
 import type { BrandOverride } from "./useBrand";
 
 export type AdminPersona = {
@@ -48,6 +48,7 @@ export type AdminConfig = {
   store: string;
   persona: AdminPersona;
   brand: BrandOverride;
+  theme: BrandTheme;
   gtm: { default: string; custom: string | null };
   avatar: AvatarState;
   content: AdminContentItem[];
@@ -166,6 +167,9 @@ export const adminApi = {
   uploadLogo: (file: File) =>
     request<{ brand: BrandOverride }>("/api/admin/brand/logo", upload(file)),
 
+  updateTheme: (theme: BrandTheme) =>
+    request<{ theme: BrandTheme }>("/api/admin/theme", json("PUT", theme)),
+
   updateGtm: (text: string | null) =>
     request<{ gtm: AdminConfig["gtm"] }>("/api/admin/gtm", json("PUT", { text })),
 
@@ -211,6 +215,6 @@ export const adminApi = {
   updateCreditsSettings: (fields: { enabled?: boolean; low_threshold?: number }) =>
     request<CreditsSummary>("/api/admin/credits/settings", json("PUT", fields)),
 
-  resetOverride: (key: "persona" | "brand" | "gtm" | `content:${string}`) =>
+  resetOverride: (key: "persona" | "brand" | "gtm" | "theme" | `content:${string}`) =>
     request<AdminConfig>(`/api/admin/overrides/${key}`, { method: "DELETE" }),
 };

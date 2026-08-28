@@ -53,7 +53,30 @@ VIDEO_EXTS = {".mp4", ".webm"}
 # re-registers these on startup while their files still exist.
 CUSTOM_CONTENT_PREFIXES = ("video:", "deck:")
 
-RESETTABLE_KEYS = {"persona", "brand", "gtm"}
+RESETTABLE_KEYS = {"persona", "brand", "gtm", "theme"}
+
+# The persona voice_id lands in the ElevenLabs request path — keep it to the
+# opaque-ID charset so a stored value can never reshape that URL.
+VOICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+# Theme override: color tokens the settings view may re-color (they map to the
+# --color-<key> custom properties in frontend/src/index.css) and the Google
+# Fonts the frontend offers. Fonts are validated by shape only — the frontend
+# resolves names against its own catalog (frontend/src/brand.ts) and ignores
+# anything unknown, so the stored name can never build a hostile fonts URL.
+THEME_COLOR_KEYS = {
+    "accent",
+    "ink",
+    "panel",
+    "panel-2",
+    "line",
+    "body",
+    "muted",
+    "moss",
+    "atlantic",
+}
+HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+FONT_NAME_RE = re.compile(r"^[A-Za-z0-9 ]{1,60}$")
 
 # HeyGen public-avatar catalog, bundled with the app (id, name, preview_url,
 # portrait). The settings view browses it; the chosen avatar is stored as the
@@ -118,6 +141,14 @@ class WordmarkLogo(BaseModel):
 class BrandUpdate(BaseModel):
     wordmark: WordmarkText | WordmarkLogo | None = None
     book_meeting_url: str | None = None
+
+
+class ThemeUpdate(BaseModel):
+    # The full desired theme each time (the form always submits every field);
+    # an empty update clears the override so the code defaults come back.
+    colors: dict[str, str] = Field(default_factory=dict)
+    heading_font: str | None = None
+    body_font: str | None = None
 
 
 class GtmUpdate(BaseModel):
@@ -199,6 +230,7 @@ async def _config() -> dict:
         "store": store.kind,
         "persona": _admin_persona(await _get_persona_or_500()),
         "brand": await store.get_override("brand") or {},
+        "theme": await store.get_override("theme") or {},
         "gtm": {"default": GTM_KNOWLEDGE.strip(), "custom": gtm.get("text")},
         "avatar": await _avatar_state(),
         "content": await _content_with_flags(),
@@ -267,6 +299,8 @@ async def update_persona(body: PersonaUpdate):
     for key in ("name", "company", "website", "tagline", "voice_id"):
         value = _clean_str(getattr(body, key), max_len=200)
         if value is not None:
+            if key == "voice_id" and not VOICE_ID_RE.fullmatch(value):
+                raise HTTPException(422, "voice_id must be an ElevenLabs voice ID")
             fields[key] = value
     for key in ("description", "greeting", "mic_disclaimer"):
         value = _clean_str(getattr(body, key))
@@ -396,6 +430,42 @@ async def upload_logo(file: UploadFile = File(...)):
             if path.name != name:
                 path.unlink(missing_ok=True)
     return {"brand": override}
+
+
+# ---------- theme (colors & fonts) ----------
+
+
+@router.put("/theme")
+async def update_theme(body: ThemeUpdate):
+    """Replace the appearance override: color tokens (hex) and font choices.
+
+    Stored as its own "theme" override (separate from "brand") so resetting the
+    wordmark never wipes the colors, and vice versa. Served to every visitor
+    merged into GET /api/brand."""
+    theme: dict = {}
+    colors: dict[str, str] = {}
+    for key, value in body.colors.items():
+        if key not in THEME_COLOR_KEYS:
+            raise HTTPException(422, f"unknown color key {key!r}")
+        value = value.strip()
+        if not HEX_COLOR_RE.fullmatch(value):
+            raise HTTPException(422, f"{key} must be a #rrggbb hex code")
+        colors[key] = value.lower()
+    if colors:
+        theme["colors"] = colors
+    for field in ("heading_font", "body_font"):
+        value = (getattr(body, field) or "").strip()
+        if value:
+            if not FONT_NAME_RE.fullmatch(value):
+                raise HTTPException(422, f"{field} must be a Google Font name")
+            theme[field] = value
+
+    store = get_store()
+    if theme:
+        await store.set_override("theme", theme)
+    else:
+        await store.delete_override("theme")
+    return {"theme": theme}
 
 
 # ---------- messaging (GTM knowledge) ----------

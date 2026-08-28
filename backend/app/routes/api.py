@@ -31,7 +31,12 @@ async def get_brand():
     """Return brand overrides set in the settings view, or empty object for defaults."""
     # Runtime brand overrides set in the settings view; the frontend merges
     # these over its static defaults in brand.ts. Empty object = defaults.
-    return await get_store().get_override("brand") or {}
+    # The appearance override (colors/fonts) lives under its own key so the
+    # two reset independently, but visitors read both from this one endpoint.
+    store = get_store()
+    brand = await store.get_override("brand") or {}
+    theme = await store.get_override("theme")
+    return {**brand, "theme": theme} if theme else brand
 
 
 @router.get("/persona")

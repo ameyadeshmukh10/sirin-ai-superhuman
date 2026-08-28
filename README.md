@@ -73,8 +73,14 @@ where the whole experience can be edited at runtime — no redeploy needed:
 
 - **Brand**: wordmark (accent-colored text or an uploaded logo file) and the
   book-a-meeting URL.
+- **Appearance**: the color of each core UI element (accent, backgrounds,
+  borders, text…) entered as hex codes, plus heading and body fonts picked
+  from a curated set of Google Fonts. Saved as a `theme` override served to
+  every visitor via `GET /api/brand` and applied as CSS custom properties on
+  top of the defaults in `frontend/src/index.css`.
 - **Persona**: name, tagline, description, greeting, suggested topics, mic
-  disclaimer, ElevenLabs voice ID, and the persona photo (upload).
+  disclaimer, the voice (picked by name from a curated ElevenLabs voice list),
+  and the persona photo (upload).
 - **Avatar**: browse the bundled HeyGen public-avatar catalog
   (`backend/app/avatar_catalog.json`) and pick the presenter used in avatar
   mode; the selection overrides `HEYGEN_AVATAR_ID` for new sessions (the API

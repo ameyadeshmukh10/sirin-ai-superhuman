@@ -5,7 +5,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { brand as brandDefaults, type Wordmark } from "../brand";
+import {
+  BODY_FONTS,
+  DEFAULT_BODY_FONT,
+  DEFAULT_HEADING_FONT,
+  HEADING_FONTS,
+  THEME_COLORS,
+  brand as brandDefaults,
+  type BrandTheme,
+  type Wordmark,
+} from "../brand";
 import WordmarkView from "../components/Wordmark";
 import {
   AdminAuthError,
@@ -19,7 +28,7 @@ import {
   type AvatarState,
   type CreditsSummary,
 } from "../lib/adminApi";
-import { useBrand } from "../lib/useBrand";
+import { fontsHref, useBrand } from "../lib/useBrand";
 
 const inputCls =
   "w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-body outline-none transition focus:border-accent/60";
@@ -286,7 +295,219 @@ function BrandSection({
   );
 }
 
+// ---------- appearance (colors & fonts) ----------
+
+const HEX_INPUT_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/**
+ * Normalize #rgb/#rrggbb input to lowercase #rrggbb; null when not a hex code.
+ */
+function normalizeHex(value: string): string | null {
+  const v = value.trim();
+  if (!HEX_INPUT_RE.test(v)) return null;
+  const hex = v.slice(1);
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex;
+  return `#${full.toLowerCase()}`;
+}
+
+/**
+ * Derive the appearance form's state from a stored theme override.
+ */
+function themeForm(theme: BrandTheme) {
+  return {
+    colors: Object.fromEntries(
+      THEME_COLORS.map((c) => [c.key, theme.colors?.[c.key] ?? c.default]),
+    ) as Record<string, string>,
+    headingFont: theme.heading_font ?? DEFAULT_HEADING_FONT,
+    bodyFont: theme.body_font ?? DEFAULT_BODY_FONT,
+  };
+}
+
+/**
+ * Section for theming the experience: hex codes for each color token and
+ * Google Font pickers for heading and body text.
+ */
+function AppearanceSection({
+  theme,
+  onConfig,
+  onAuthNeeded,
+}: {
+  theme: BrandTheme;
+  onConfig: (update: Partial<AdminConfig>) => void;
+  onAuthNeeded: () => void;
+}) {
+  const { refresh } = useBrand();
+  const save = useSave(onAuthNeeded);
+  const [form, setForm] = useState(() => themeForm(theme));
+  const setColor = (key: string, value: string) =>
+    setForm({ ...form, colors: { ...form.colors, [key]: value } });
+
+  // Load every catalog font once so the pickers can preview their choices.
+  useEffect(() => {
+    if (document.getElementById("font-preview-css")) return;
+    const link = document.createElement("link");
+    link.id = "font-preview-css";
+    link.rel = "stylesheet";
+    link.href = fontsHref([...HEADING_FONTS, ...BODY_FONTS]);
+    document.head.appendChild(link);
+  }, []);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    save.run(async () => {
+      // only differences from the code defaults are stored, so a code-level
+      // rebrand keeps flowing through for anything left untouched here
+      const colors: Record<string, string> = {};
+      for (const c of THEME_COLORS) {
+        const normalized = normalizeHex(form.colors[c.key] ?? "");
+        if (!normalized) throw new Error(`${c.label}: enter a hex code like ${c.default}.`);
+        if (normalized !== c.default) colors[c.key] = normalized;
+      }
+      const res = await adminApi.updateTheme({
+        colors,
+        heading_font: form.headingFont === DEFAULT_HEADING_FONT ? null : form.headingFont,
+        body_font: form.bodyFont === DEFAULT_BODY_FONT ? null : form.bodyFont,
+      });
+      onConfig({ theme: res.theme });
+      setForm(themeForm(res.theme)); // reflect the normalized stored values
+      refresh();
+    });
+  };
+
+  const reset = () =>
+    save.run(async () => {
+      const fresh = await adminApi.resetOverride("theme");
+      onConfig(fresh);
+      setForm(themeForm(fresh.theme));
+      refresh();
+    });
+
+  const headingSerif = HEADING_FONTS.find((f) => f.name === form.headingFont)?.serif ?? true;
+  const bodySerif = BODY_FONTS.find((f) => f.name === form.bodyFont)?.serif ?? false;
+
+  return (
+    <Section
+      title="Appearance"
+      hint="The colors and typography of the whole experience. Enter a hex code for each element (or use the swatch picker), choose the fonts, and save — every visitor sees the new look immediately."
+    >
+      <form onSubmit={submit} className="space-y-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {THEME_COLORS.map((c) => {
+            const value = form.colors[c.key] ?? "";
+            const normalized = normalizeHex(value);
+            return (
+              <label key={c.key} className="block" title={c.hint}>
+                <span className="mb-1.5 block text-[12px] font-medium tracking-wide text-muted">
+                  {c.label}
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={normalized ?? c.default}
+                    onChange={(e) => setColor(c.key, e.target.value)}
+                    aria-label={`${c.label} color picker`}
+                    className="h-9 w-10 shrink-0 cursor-pointer rounded-lg border border-line bg-panel-2 p-1"
+                  />
+                  <input
+                    value={value}
+                    onChange={(e) => setColor(c.key, e.target.value)}
+                    placeholder={c.default}
+                    spellCheck={false}
+                    className={`${inputCls} font-mono text-[13px] ${
+                      normalized ? "" : "border-red-800/50"
+                    }`}
+                  />
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Heading font">
+            <select
+              value={form.headingFont}
+              onChange={(e) => setForm({ ...form, headingFont: e.target.value })}
+              className={inputCls}
+            >
+              {HEADING_FONTS.map((f) => (
+                <option key={f.name} value={f.name}>
+                  {f.name}
+                  {f.name === DEFAULT_HEADING_FONT ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+            <p
+              className="mt-2 truncate text-xl text-body"
+              style={{ fontFamily: `"${form.headingFont}", ${headingSerif ? "serif" : "sans-serif"}` }}
+            >
+              A headline in {form.headingFont}
+            </p>
+          </Field>
+          <Field label="Body font">
+            <select
+              value={form.bodyFont}
+              onChange={(e) => setForm({ ...form, bodyFont: e.target.value })}
+              className={inputCls}
+            >
+              {BODY_FONTS.map((f) => (
+                <option key={f.name} value={f.name}>
+                  {f.name}
+                  {f.name === DEFAULT_BODY_FONT ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+            <p
+              className="mt-2 truncate text-sm text-body"
+              style={{ fontFamily: `"${form.bodyFont}", ${bodySerif ? "serif" : "sans-serif"}` }}
+            >
+              Body copy set in {form.bodyFont} for easy reading.
+            </p>
+          </Field>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <SaveButton state={save.state} />
+          <button
+            type="button"
+            onClick={reset}
+            disabled={save.state === "saving"}
+            className={btnGhostCls}
+          >
+            Reset to defaults
+          </button>
+          <ErrorText error={save.error} />
+        </div>
+      </form>
+    </Section>
+  );
+}
+
 // ---------- persona ----------
+
+// Curated ElevenLabs voices for the persona. The dropdown shows only the
+// names; the voice ID is what gets stored and sent to ElevenLabs.
+const VOICES: { name: string; id: string }[] = [
+  { name: "Ezekiel", id: "psFPhSqnHmRieM88O1NC" },
+  { name: "Freddie", id: "YImgdHB2KYPPVa2Ew8pp" },
+  { name: "Rupert", id: "dI6Ldou06iqSFGEJjKW0" },
+  { name: "Michael", id: "YxV306TE3Zjvmce8pOII" },
+  { name: "Elliot", id: "8gNL8wXI7PQOc82yBLOg" },
+  { name: "Kelly", id: "XlHDwyzsCODU3TfhB5es" },
+  { name: "Eliza", id: "ut2XM2wJyIZLTtW6lFzZ" },
+  { name: "Anna", id: "L39mCFEANiRSjBYTGelY" },
+  { name: "Lucy", id: "Gv42yFG3G6CHLsU5y8g6" },
+  { name: "Posh", id: "3Drdg7QWqr45nZmYpXRP" },
+  { name: "Samantha", id: "LJwPgeJYv0dNJzEtXVO6" },
+  { name: "Emmaline", id: "nDJIICjR9zfJExIFeSCN" },
+  { name: "Zara", id: "jqcCZkN6Knx8BJ5TBdYR" },
+];
 
 /**
  * Section for managing persona details (name, company, greeting, topics, etc).
@@ -312,8 +533,10 @@ function PersonaSection({
     voice_id: persona.voice_id ?? "",
     topics: (persona.default_topics ?? []).join("\n"),
   });
-  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm({ ...form, [key]: e.target.value });
+  const set =
+    (key: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setForm({ ...form, [key]: e.target.value });
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -403,8 +626,17 @@ function PersonaSection({
             <textarea value={form.mic_disclaimer} onChange={set("mic_disclaimer")} rows={3} className={inputCls} />
           </Field>
         </div>
-        <Field label="ElevenLabs voice ID">
-          <input value={form.voice_id} onChange={set("voice_id")} className={inputCls} />
+        <Field label="Voice (how the persona sounds)">
+          <select value={form.voice_id} onChange={set("voice_id")} className={inputCls}>
+            {!VOICES.some((v) => v.id === form.voice_id) && (
+              <option value={form.voice_id}>Server default</option>
+            )}
+            {VOICES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
         </Field>
         <div className="flex items-center gap-3">
           <SaveButton state={save.state} />
@@ -1447,6 +1679,11 @@ export default function SettingsPage() {
             )}
 
             <BrandSection config={config} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
+            <AppearanceSection
+              theme={config.theme}
+              onConfig={onConfig}
+              onAuthNeeded={onAuthNeeded}
+            />
             <PersonaSection
               persona={config.persona}
               onConfig={onConfig}

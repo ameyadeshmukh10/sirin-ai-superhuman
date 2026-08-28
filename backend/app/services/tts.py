@@ -36,6 +36,7 @@ class TtsRelay:
         emit_bytes: EmitBytes,
         output_format: str | None = None,
         sample_rate: int | None = None,
+        voice_id: str | None = None,
     ):
         self.settings = settings
         self.gen = gen
@@ -43,6 +44,7 @@ class TtsRelay:
         self.emit_bytes = emit_bytes
         self.output_format = output_format or settings.tts_output_format
         self.sample_rate = sample_rate or settings.tts_sample_rate
+        self.voice_id = voice_id or settings.elevenlabs_voice_id
         self.queues: dict[int, asyncio.Queue] = {}
         self.order: asyncio.Queue[int] = asyncio.Queue()
         self.sem = asyncio.Semaphore(max(1, settings.tts_lookahead))
@@ -93,7 +95,7 @@ class TtsRelay:
         """Stream PCM audio from ElevenLabs for one sentence, pushing chunks to the queue."""
         url = (
             f"https://api.elevenlabs.io/v1/text-to-speech/"
-            f"{self.settings.elevenlabs_voice_id}/stream"
+            f"{self.voice_id}/stream"
             f"?output_format={self.output_format}"
         )
         body: dict = {"text": text, "model_id": self.settings.elevenlabs_model}
