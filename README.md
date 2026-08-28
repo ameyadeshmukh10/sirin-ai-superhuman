@@ -134,6 +134,11 @@ two backend content files above.
    (or mount elsewhere and set `UPLOADS_DIR` to that path).
 5. Healthcheck path is `/api/health` (set in `railway.json`). Generate a domain.
 
+Keep the app at a single instance (`railway.json` pins `numReplicas: 1`): the
+whole app is single-process by design — live sessions are held in memory, and
+the settings view's file writes rely on in-process locking. Scaling out would
+need shared session state and distributed locks, not just more replicas.
+
 ## Smoke test
 
 ```bash
