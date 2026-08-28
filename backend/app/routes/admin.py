@@ -751,10 +751,14 @@ async def delete_content(item_id: str):
         # uploaded decks own a directory; remove it once its slides are gone.
         # cleanup errors propagate BEFORE the records go: a failed delete stays
         # retryable, and if it never is, the next seed() heals it (missing assets
-        # → the orphan branch drops the override and sweeps the directory)
-        deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
-        if deck_dir.is_relative_to(UPLOADS_DIR.resolve()) and deck_dir.is_dir():
-            shutil.rmtree(deck_dir)
+        # → the orphan branch drops the override and sweeps the directory).
+        # strict containment: a hostile "deck:.." override must not reach the
+        # decks root or above, and video deletions never touch this tree
+        if prefix == "deck:":
+            decks_root = (UPLOADS_DIR / "decks").resolve()
+            deck_dir = (UPLOADS_DIR / "decks" / item_id).resolve()
+            if deck_dir != decks_root and deck_dir.is_relative_to(decks_root) and deck_dir.is_dir():
+                shutil.rmtree(deck_dir)
         await store.delete_override(f"{prefix}{item_id}")
         await store.delete_content_item(item_id)
     return {"content": await _content_with_flags()}
