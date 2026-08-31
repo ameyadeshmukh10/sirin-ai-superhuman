@@ -46,6 +46,14 @@ body,
   background: color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
+/* The /embed widget runs in an iframe over the host page: everything the
+   widget doesn't paint must show the site underneath. */
+html.embed-widget,
+html.embed-widget body,
+html.embed-widget #root {
+  background: transparent;
+}
+
 /* In the components layer so Tailwind utilities can still override
    individual properties (e.g. border-accent/40 on a .card). */
 @layer components {
