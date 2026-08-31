@@ -566,8 +566,7 @@ function PersonaSection({
   const uploadImage = (file: File) =>
     save.run(async () => {
       const res = await adminApi.uploadPersonaImage(file);
-      // cache-buster: the file name is fixed, so force the preview to refetch
-      onConfig({ persona: { ...persona, image_url: `${res.image_url}?v=${Date.now()}` } });
+      onConfig({ persona: { ...persona, image_url: res.image_url } });
     });
 
   const reset = () =>

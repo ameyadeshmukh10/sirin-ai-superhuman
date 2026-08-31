@@ -35,6 +35,29 @@ PERSONA_EDITABLE_FIELDS = {
 
 CONTENT_EDITABLE_FIELDS = {"title", "description", "presenter_notes"}
 
+PERSONA_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _uploaded_persona_image() -> str | None:
+    """The served path of the persona photo uploaded via the settings view.
+
+    Uploads get unique names (persona-<hex>.<ext>) so replacements change URL
+    and can't be served stale from browser caches; legacy fixed-name persona.<ext>
+    files from before that scheme still match. Normally at most one file exists —
+    the upload route sweeps predecessors — but after an interrupted sweep the
+    newest one is the photo the persona doc last pointed at."""
+    newest, newest_mtime = None, 0.0
+    for p in UPLOADS_DIR.glob("persona*.*"):
+        if p.suffix.lower() not in PERSONA_IMAGE_EXTS:
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue  # swept by a concurrent replacement between glob and stat
+        if newest is None or mtime > newest_mtime:
+            newest, newest_mtime = p, mtime
+    return f"/uploads/{newest.name}" if newest else None
+
 
 def _apply_override(doc: dict, override: dict | None, allowed: set[str]) -> dict:
     """Apply override fields to a document, keeping only allowed field names."""
@@ -82,7 +105,7 @@ PERSONA = {
         "to start a conversation, Sage can walk you through it."
     ),
     "voice_id": settings.elevenlabs_voice_id,
-    "image_path": None,  # set at seed time from uploads/persona.* or content/persona.*
+    "image_path": None,  # set at seed time from uploads/persona*.* or content/persona.*
     "greeting": (
         "Hi, I'm Sage, your guide to Sirin AI. Sirin designs, deploys and manages "
         "custom AI agents — with the interfaces, integrations and ongoing support that "
@@ -235,12 +258,11 @@ async def seed(store) -> None:
     persona = dict(PERSONA)
     # a photo uploaded via the settings view (UPLOADS_DIR, usually on a
     # persistence volume) wins over a persona image committed to the repo
-    persona["image_path"] = next(
+    persona["image_path"] = _uploaded_persona_image() or next(
         (
-            f"{prefix}/persona.{ext}"
-            for root, prefix in ((UPLOADS_DIR, "/uploads"), (CONTENT_DIR, "/content"))
+            f"/content/persona.{ext}"
             for ext in ("jpg", "jpeg", "png", "webp")
-            if (root / f"persona.{ext}").exists()
+            if (CONTENT_DIR / f"persona.{ext}").exists()
         ),
         None,
     )
