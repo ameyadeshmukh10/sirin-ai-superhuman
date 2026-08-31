@@ -1621,9 +1621,12 @@ export default function SettingsPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const requested = searchParams.get("tab");
+  // ?credits=purchased implies the Credits tab only when no tab was requested
+  // at all (legacy Stripe return URLs) — an explicit but invalid tab falls
+  // back to the first tab like any other unknown value.
   const tab: TabId = TABS.some((t) => t.id === requested)
     ? (requested as TabId)
-    : searchParams.get("credits") === "purchased"
+    : requested === null && searchParams.get("credits") === "purchased"
       ? "credits"
       : TABS[0].id;
 
