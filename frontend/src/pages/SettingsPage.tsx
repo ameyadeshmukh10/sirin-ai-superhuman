@@ -4,7 +4,7 @@
 // configured.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   BODY_FONTS,
   DEFAULT_BODY_FONT,
@@ -510,6 +510,15 @@ const VOICES: { name: string; id: string }[] = [
 ];
 
 /**
+ * The voice select's value for a persona: "" (the "Server default" option)
+ * when the persona speaks with the env-configured voice, else the stored ID.
+ */
+function voiceFromPersona(persona: AdminPersona): string {
+  const id = persona.voice_id ?? "";
+  return id === persona.default_voice_id ? "" : id;
+}
+
+/**
  * Section for managing persona details (name, company, greeting, topics, etc).
  */
 function PersonaSection({
@@ -530,7 +539,7 @@ function PersonaSection({
     description: persona.description ?? "",
     greeting: persona.greeting ?? "",
     mic_disclaimer: persona.mic_disclaimer ?? "",
-    voice_id: persona.voice_id ?? "",
+    voice_id: voiceFromPersona(persona),
     topics: (persona.default_topics ?? []).join("\n"),
   });
   const set =
@@ -541,9 +550,13 @@ function PersonaSection({
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     save.run(async () => {
-      const { topics, ...fields } = form;
+      const { topics, voice_id, ...fields } = form;
       const res = await adminApi.updatePersona({
         ...fields,
+        // only sent when actually changed ("" = clear back to the server
+        // default), so an unrelated save can never re-store or trip over
+        // whatever voice is already configured
+        ...(voice_id !== voiceFromPersona(persona) ? { voice_id } : {}),
         default_topics: topics.split("\n").map((t) => t.trim()).filter(Boolean),
       });
       onConfig({ persona: res.persona });
@@ -569,7 +582,7 @@ function PersonaSection({
         description: fresh.persona.description ?? "",
         greeting: fresh.persona.greeting ?? "",
         mic_disclaimer: fresh.persona.mic_disclaimer ?? "",
-        voice_id: fresh.persona.voice_id ?? "",
+        voice_id: voiceFromPersona(fresh.persona),
         topics: (fresh.persona.default_topics ?? []).join("\n"),
       });
     });
@@ -628,8 +641,9 @@ function PersonaSection({
         </div>
         <Field label="Voice (how the persona sounds)">
           <select value={form.voice_id} onChange={set("voice_id")} className={inputCls}>
-            {!VOICES.some((v) => v.id === form.voice_id) && (
-              <option value={form.voice_id}>Server default</option>
+            <option value="">Server default</option>
+            {form.voice_id !== "" && !VOICES.some((v) => v.id === form.voice_id) && (
+              <option value={form.voice_id}>Custom voice (current)</option>
             )}
             {VOICES.map((v) => (
               <option key={v.id} value={v.id}>
@@ -1582,6 +1596,19 @@ function FilePicker({
 
 // ---------- page ----------
 
+// The settings sections grouped into tabs so the page isn't one long scroll.
+// The active tab lives in the URL (?tab=…) so reloads, back/forward and deep
+// links (e.g. the Stripe checkout return, which points at ?tab=credits) land
+// on the right group.
+const TABS = [
+  { id: "branding", label: "Branding" },
+  { id: "persona", label: "Persona" },
+  { id: "messaging", label: "Messaging" },
+  { id: "content", label: "Content" },
+  { id: "credits", label: "Credits" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
 /**
  * Settings page for configuring brand, persona, avatar, messaging, and content.
  */
@@ -1590,6 +1617,32 @@ export default function SettingsPage() {
   const [needToken, setNeedToken] = useState(false);
   const [tokenInput, setTokenInput] = useState(getAdminToken());
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const requested = searchParams.get("tab");
+  // ?credits=purchased implies the Credits tab only when no tab was requested
+  // at all (legacy Stripe return URLs) — an explicit but invalid tab falls
+  // back to the first tab like any other unknown value.
+  const tab: TabId = TABS.some((t) => t.id === requested)
+    ? (requested as TabId)
+    : requested === null && searchParams.get("credits") === "purchased"
+      ? "credits"
+      : TABS[0].id;
+
+  const selectTab = (id: TabId) => {
+    // replace, not push: flipping through tabs shouldn't bury the real
+    // back-button destination (the landing page) under tab history
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", id);
+        return next;
+      },
+      { replace: true },
+    );
+    scrollRef.current?.scrollTo({ top: 0 });
+  };
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -1622,7 +1675,7 @@ export default function SettingsPage() {
   const videos = config?.content.filter((c) => c.type === "video") ?? [];
 
   return (
-    <div className="h-full overflow-y-auto scroll-thin">
+    <div ref={scrollRef} className="h-full overflow-y-auto scroll-thin">
       <div className="mx-auto w-[min(880px,94vw)] pb-16">
         <header className="relative flex items-center justify-center py-5">
           <Link
@@ -1678,54 +1731,98 @@ export default function SettingsPage() {
               </p>
             )}
 
-            <BrandSection config={config} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
-            <AppearanceSection
-              theme={config.theme}
-              onConfig={onConfig}
-              onAuthNeeded={onAuthNeeded}
-            />
-            <PersonaSection
-              persona={config.persona}
-              onConfig={onConfig}
-              onAuthNeeded={onAuthNeeded}
-            />
-            <AvatarSection avatar={config.avatar} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
-            <CreditsSection onAuthNeeded={onAuthNeeded} />
-            <MessagingSection gtm={config.gtm} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
+            <div className="sticky top-2 z-10">
+              <nav
+                role="tablist"
+                aria-label="Settings sections"
+                className="glass scroll-thin flex gap-1 overflow-x-auto rounded-full p-1.5"
+              >
+                {TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t.id}
+                    onClick={() => selectTab(t.id)}
+                    className={`whitespace-nowrap rounded-full px-4 py-2 text-sm transition ${
+                      tab === t.id
+                        ? "bg-accent font-semibold text-ink"
+                        : "text-muted hover:text-accent"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
 
-            <Section
-              title="Slide decks"
-              hint="Titles and descriptions steer when the AI shows a deck; presenter notes are the exact talk track it speaks on each slide. Upload your own slideware as a PDF or a set of images."
-            >
-              {decks.length ? (
-                decks.map((deck) => (
-                  <DeckCard
-                    key={deck.id}
-                    item={deck}
+            {/* Panels stay mounted and are only hidden, so unsaved edits (and
+                the avatar/credits fetches) survive switching tabs. */}
+            <div role="tabpanel" hidden={tab !== "branding"} className="space-y-6">
+              <BrandSection config={config} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
+              <AppearanceSection
+                theme={config.theme}
+                onConfig={onConfig}
+                onAuthNeeded={onAuthNeeded}
+              />
+            </div>
+
+            <div role="tabpanel" hidden={tab !== "persona"} className="space-y-6">
+              <PersonaSection
+                persona={config.persona}
+                onConfig={onConfig}
+                onAuthNeeded={onAuthNeeded}
+              />
+              <AvatarSection
+                avatar={config.avatar}
+                onConfig={onConfig}
+                onAuthNeeded={onAuthNeeded}
+              />
+            </div>
+
+            <div role="tabpanel" hidden={tab !== "messaging"} className="space-y-6">
+              <MessagingSection gtm={config.gtm} onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
+            </div>
+
+            <div role="tabpanel" hidden={tab !== "content"} className="space-y-6">
+              <Section
+                title="Slide decks"
+                hint="Titles and descriptions steer when the AI shows a deck; presenter notes are the exact talk track it speaks on each slide. Upload your own slideware as a PDF or a set of images."
+              >
+                {decks.length ? (
+                  decks.map((deck) => (
+                    <DeckCard
+                      key={deck.id}
+                      item={deck}
+                      onConfig={onConfig}
+                      onAuthNeeded={onAuthNeeded}
+                    />
+                  ))
+                ) : (
+                  <p className="text-sm text-muted">No slide decks are loaded.</p>
+                )}
+                <DeckUpload onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
+              </Section>
+
+              <Section
+                title="Videos"
+                hint="Clips the AI can play in the media pane. The description tells it when a clip is relevant."
+              >
+                {videos.map((video) => (
+                  <VideoCard
+                    key={video.id}
+                    item={video}
                     onConfig={onConfig}
                     onAuthNeeded={onAuthNeeded}
                   />
-                ))
-              ) : (
-                <p className="text-sm text-muted">No slide decks are loaded.</p>
-              )}
-              <DeckUpload onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
-            </Section>
+                ))}
+                <VideoUpload onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
+              </Section>
+            </div>
 
-            <Section
-              title="Videos"
-              hint="Clips the AI can play in the media pane. The description tells it when a clip is relevant."
-            >
-              {videos.map((video) => (
-                <VideoCard
-                  key={video.id}
-                  item={video}
-                  onConfig={onConfig}
-                  onAuthNeeded={onAuthNeeded}
-                />
-              ))}
-              <VideoUpload onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
-            </Section>
+            <div role="tabpanel" hidden={tab !== "credits"} className="space-y-6">
+              <CreditsSection onAuthNeeded={onAuthNeeded} />
+            </div>
           </div>
         )}
 

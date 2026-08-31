@@ -8,6 +8,8 @@ import type { BrandOverride } from "./useBrand";
 export type AdminPersona = {
   id: string;
   image_url: string | null;
+  // the env-configured fallback voice; lets the UI show it as "Server default"
+  default_voice_id: string;
   name: string;
   company: string;
   website: string;
