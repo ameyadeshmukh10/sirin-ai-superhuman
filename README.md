@@ -1,10 +1,10 @@
-# Everworker Superhuman (prototype)
+# 1-Mind Superhuman (prototype)
 
-A 1mind.com-style "Superhuman" — an AI sales persona web app for Everworker GTM.
-v1 is **audio-only**: a static persona visual speaks with a streamed ElevenLabs voice
-while the same text streams into a chat panel; Claude orchestrates the conversation,
-shows slide decks and video clips, updates suggested topics, and surfaces a
-book-a-meeting CTA. See [roadmap.md](roadmap.md) for the path to avatar streaming.
+A 1mind.com-style "Superhuman" — an AI sales persona web app for GTM teams.
+Uses anthropic API endpoints, elevenlabs, and heygen live avatar streaming. Deploy on railway. 
+
+Supports video, slide decks (PDF or PNG), easily customizable without code, and can be embedded onto a web page as a module, as a web chat experience, or live on its own dedicated URL and web experience. 
+
 
 ## Architecture
 
