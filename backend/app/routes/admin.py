@@ -377,10 +377,12 @@ async def upload_persona_image(file: UploadFile = File(...)):
     cache — with the old fixed persona.<ext> name, a replacement saved fine but
     every page kept showing the stale cached image."""
     ext = _file_ext(file.filename, IMAGE_EXTS)
-    name = f"persona-{uuid.uuid4().hex[:8]}{ext}"
+    # full UUID: a truncated name colliding with the current photo's would
+    # silently reuse its URL — the exact stale-cache failure this scheme fixes
+    name = f"persona-{uuid.uuid4().hex}{ext}"
     # write to a temp name first so a failed upload can't destroy the current
     # photo; the leading dot keeps it out of the persona* seed detection
-    tmp_rel = f".persona-upload-{uuid.uuid4().hex[:8]}{ext}"
+    tmp_rel = f".persona-upload-{uuid.uuid4().hex}{ext}"
     await _save_upload(file, tmp_rel, MAX_IMAGE_BYTES)
     tmp = UPLOADS_DIR / tmp_rel
     async with _replace_lock:

@@ -257,15 +257,30 @@ async def seed(store) -> None:
 
     persona = dict(PERSONA)
     # a photo uploaded via the settings view (UPLOADS_DIR, usually on a
-    # persistence volume) wins over a persona image committed to the repo
-    persona["image_path"] = _uploaded_persona_image() or next(
-        (
-            f"/content/persona.{ext}"
-            for ext in ("jpg", "jpeg", "png", "webp")
-            if (CONTENT_DIR / f"persona.{ext}").exists()
-        ),
-        None,
-    )
+    # persistence volume) wins over a persona image committed to the repo.
+    # A persisted /uploads/ reference whose file still exists wins over
+    # filesystem discovery: the doc is only updated once an upload fully
+    # commits, where discovery could pick up a newer file left behind by an
+    # upload that crashed before committing (swept by the next replacement).
+    prior = await store.get_persona(PERSONA["_id"]) or {}
+    prior_path = prior.get("image_path")
+    prior_file = asset_file(prior_path) if isinstance(prior_path, str) else None
+    if (
+        isinstance(prior_path, str)
+        and prior_path.startswith("/uploads/")
+        and prior_file is not None
+        and prior_file.exists()
+    ):
+        persona["image_path"] = prior_path
+    else:
+        persona["image_path"] = _uploaded_persona_image() or next(
+            (
+                f"/content/persona.{ext}"
+                for ext in ("jpg", "jpeg", "png", "webp")
+                if (CONTENT_DIR / f"persona.{ext}").exists()
+            ),
+            None,
+        )
     _apply_override(persona, overrides.get("persona"), PERSONA_EDITABLE_FIELDS)
     await store.upsert_persona(persona)
 
