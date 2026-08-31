@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import AvatarVideo from "../components/AvatarVideo";
 import BottomBar from "../components/BottomBar";
@@ -8,7 +8,7 @@ import MediaOverlay from "../components/MediaOverlay";
 import PersonaVisual from "../components/PersonaVisual";
 import Wordmark from "../components/Wordmark";
 import { useSession } from "../hooks/useSession";
-import { useSpeechInput } from "../hooks/useSpeechInput";
+import { useVoiceChat } from "../hooks/useVoiceChat";
 import { player } from "../lib/pcmPlayer";
 
 export default function SessionPage() {
@@ -16,66 +16,22 @@ export default function SessionPage() {
   const navigate = useNavigate();
   const { state, sendMessage, interrupt, sendAnalytics, endSession, setMedia } =
     useSession(sessionId);
-  const [micOn, setMicOn] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
 
-  // Full-duplex politeness: the mic stays live while the persona speaks. The
-  // moment the visitor talks over it we hush it (voice interrupt); their finished
-  // sentence then becomes the next turn. Guards keep the persona's own voice —
-  // leaking from the speakers into the mic — from triggering a self-interrupt.
-  const activeRef = useRef(false); // persona speaking or thinking
-  const stoppedAtRef = useRef(0);
-  const bargedRef = useRef(false);
-  const personaTextRef = useRef("");
-
-  useEffect(() => {
-    const active = state.playing || state.status !== "idle";
-    if (activeRef.current && !active) stoppedAtRef.current = Date.now();
-    activeRef.current = active;
-  }, [state.playing, state.status]);
-
-  useEffect(() => {
-    const lastAssistant = [...state.messages].reverse().find((m) => m.role === "assistant");
-    personaTextRef.current = lastAssistant?.text ?? "";
-  }, [state.messages]);
-
-  const isPersonaEcho = useCallback((text: string) => {
-    const norm = (s: string) =>
-      s.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
-    const heard = norm(text);
-    if (!heard) return true;
-    const spoken = norm(personaTextRef.current);
-    return spoken.length > 0 && spoken.includes(heard);
-  }, []);
-
-  const speech = useSpeechInput({
-    enabled: micOn,
-    onInterim: (text) => {
-      if (!activeRef.current || bargedRef.current) return;
-      if (text.trim().split(/\s+/).length < 2) return; // ignore blips and coughs
-      if (isPersonaEcho(text)) return; // the persona's own voice through the speakers
-      bargedRef.current = true;
-      interrupt("voice");
-    },
-    onFinal: (text) => {
-      bargedRef.current = false;
-      // right after the persona stops, a final can still be its own trailing echo
-      const echoWindow = activeRef.current || Date.now() - stoppedAtRef.current < 1500;
-      if (echoWindow && isPersonaEcho(text)) return;
-      sendMessage(text, "voice");
-    },
+  const onMicToggle = useCallback(
+    (on: boolean) => sendAnalytics("mic_toggled", { on }),
+    [sendAnalytics],
+  );
+  const { micOn, toggleMic, speech } = useVoiceChat({
+    state,
+    sendMessage,
+    interrupt,
+    onMicToggle,
   });
 
   useEffect(() => {
     player.setMuted(!speakerOn);
   }, [speakerOn]);
-
-  const toggleMic = useCallback(() => {
-    setMicOn((on) => {
-      sendAnalytics("mic_toggled", { on: !on });
-      return !on;
-    });
-  }, [sendAnalytics]);
 
   const handleEnd = useCallback(() => {
     endSession();

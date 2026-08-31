@@ -11,9 +11,18 @@ type Props = {
   speaking: boolean;
   muted: boolean;
   name: string;
+  // Overrides the stage sizing/frame so the embed widget can fill its own box.
+  className?: string;
 };
 
-export default function AvatarVideo({ url, token, speaking, muted, name }: Props) {
+export default function AvatarVideo({
+  url,
+  token,
+  speaking,
+  muted,
+  name,
+  className = "aspect-video w-[min(560px,60vw)] rounded-2xl border-2",
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [connected, setConnected] = useState(false);
@@ -61,7 +70,7 @@ export default function AvatarVideo({ url, token, speaking, muted, name }: Props
 
   return (
     <div
-      className={`relative aspect-video w-[min(560px,60vw)] overflow-hidden rounded-2xl border-2 transition-colors duration-300 ${
+      className={`relative overflow-hidden transition-colors duration-300 ${className} ${
         speaking ? "border-accent/70" : "border-line"
       }`}
     >

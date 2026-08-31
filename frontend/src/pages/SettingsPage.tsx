@@ -1552,6 +1552,94 @@ function VideoUpload({
   );
 }
 
+// ---------- embed ----------
+
+/**
+ * Read-only code block with a copy button.
+ */
+function CodeSnippet({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch {
+      // clipboard API can be unavailable (http, old browsers) — fall back
+      const area = document.createElement("textarea");
+      area.value = code;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+    setCopied(true);
+    timer.current = window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative">
+      <pre className="scroll-thin overflow-x-auto rounded-xl border border-line bg-panel-2/70 p-4 pr-24 font-mono text-[12.5px] leading-relaxed text-body">
+        {code}
+      </pre>
+      <button
+        type="button"
+        onClick={copy}
+        className="absolute right-3 top-3 rounded-full border border-line bg-panel px-3.5 py-1.5 text-[12px] font-medium text-muted transition hover:border-accent/50 hover:text-accent"
+      >
+        {copied ? "Copied ✓" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Sections with copy-paste snippets for putting the experience on any website:
+ * the floating chat bubble and the full-page iframe embed.
+ */
+function EmbedSections({ personaName }: { personaName: string }) {
+  const origin = window.location.origin;
+  const name = personaName || "your guide";
+  const bubbleSnippet = `<script src="${origin}/embed.js" async></script>`;
+  const iframeSnippet = [
+    `<iframe`,
+    `  src="${origin}/?embed=1"`,
+    `  title="${name} — AI guide"`,
+    `  allow="microphone; autoplay; clipboard-write"`,
+    `  style="width: 100%; height: 700px; border: 0; border-radius: 16px;"`,
+    `></iframe>`,
+  ].join("\n");
+
+  return (
+    <>
+      <Section
+        title="Chat bubble"
+        hint={`A floating bubble with ${name}'s photo in the corner of any website. Visitors can speak or type right away, and the chat expands to the full experience — slides and video included. Paste this just before the closing </body> tag.`}
+      >
+        <CodeSnippet code={bubbleSnippet} />
+        <p className="text-[12px] leading-relaxed text-muted">
+          The bubble docks bottom-right; add <code className="font-mono">data-position="left"</code>{" "}
+          to the script tag to dock it bottom-left. The mic permission prompt shows the host
+          site's domain — that's expected for embedded widgets.
+        </p>
+      </Section>
+
+      <Section
+        title="Website embed"
+        hint="The full experience embedded directly in a page — the same landing and conversation visitors get here, inside your own site. Adjust the height style to taste."
+      >
+        <CodeSnippet code={iframeSnippet} />
+        <p className="text-[12px] leading-relaxed text-muted">
+          The <code className="font-mono">allow</code> attribute is required for voice input and
+          audio to work inside the frame. <code className="font-mono">?embed=1</code> hides the
+          settings button from visitors.
+        </p>
+      </Section>
+    </>
+  );
+}
+
 // ---------- shared ----------
 
 /**
@@ -1605,6 +1693,7 @@ const TABS = [
   { id: "persona", label: "Persona" },
   { id: "messaging", label: "Messaging" },
   { id: "content", label: "Content" },
+  { id: "embed", label: "Embed" },
   { id: "credits", label: "Credits" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -1818,6 +1907,10 @@ export default function SettingsPage() {
                 ))}
                 <VideoUpload onConfig={onConfig} onAuthNeeded={onAuthNeeded} />
               </Section>
+            </div>
+
+            <div role="tabpanel" hidden={tab !== "embed"} className="space-y-6">
+              <EmbedSections personaName={config.persona.name ?? ""} />
             </div>
 
             <div role="tabpanel" hidden={tab !== "credits"} className="space-y-6">
