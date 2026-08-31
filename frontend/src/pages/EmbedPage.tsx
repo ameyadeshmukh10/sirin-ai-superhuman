@@ -22,6 +22,10 @@ const speechSupported = Boolean(
   (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition,
 );
 
+/**
+ * Widget state machine: which state is showing, the session lifecycle, and
+ * size notifications to the parent loader.
+ */
 export default function EmbedPage() {
   const [searchParams] = useSearchParams();
   const [widget, setWidget] = useState<WidgetState>(() =>
@@ -166,7 +170,7 @@ export default function EmbedPage() {
         busy={starting}
         error={error}
         onOpen={() => open({})}
-        onSpeak={() => open({ mic: speechSupported })}
+        onSpeak={() => open({ mic: true })}
         onAsk={(text) => open({ message: text })}
         onMinimize={() => setWidget("mini")}
       />
@@ -174,6 +178,10 @@ export default function EmbedPage() {
   );
 }
 
+/**
+ * The closed widget's invitation card: persona photo, "Speak now", booking
+ * CTA and an ask-a-question composer.
+ */
 function TeaserCard({
   cardRef,
   persona,
@@ -226,17 +234,19 @@ function TeaserCard({
             <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
           </svg>
         </button>
-        <button
-          onClick={onSpeak}
-          disabled={busy}
-          className="glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[13px] font-semibold text-body transition hover:border-accent/60 hover:text-accent disabled:opacity-60"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
-          </svg>
-          {busy ? "Connecting…" : "Speak now"}
-        </button>
+        {speechSupported && (
+          <button
+            onClick={onSpeak}
+            disabled={busy}
+            className="glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[13px] font-semibold text-body transition hover:border-accent/60 hover:text-accent disabled:opacity-60"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
+            </svg>
+            {busy ? "Connecting…" : "Speak now"}
+          </button>
+        )}
       </div>
 
       <div className="space-y-2.5 p-3">

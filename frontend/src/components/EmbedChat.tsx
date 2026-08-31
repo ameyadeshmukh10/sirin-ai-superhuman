@@ -20,6 +20,9 @@ type Props = {
   className?: string;
 };
 
+/**
+ * Transcript, suggested topics, booking CTA and composer for the widget.
+ */
 export default function EmbedChat({
   personaName,
   messages,
@@ -92,6 +95,7 @@ export default function EmbedChat({
           <input
             value={interim || draft}
             onChange={(e) => setDraft(e.target.value)}
+            readOnly={Boolean(interim)}
             placeholder={interim ? "" : `Ask ${personaName || "me"} a question`}
             className="min-w-0 flex-1 rounded-full border border-line bg-panel-2/70 px-4 py-2.5 text-sm text-body placeholder-muted/70 outline-none transition focus:border-accent/50 focus:bg-panel"
           />

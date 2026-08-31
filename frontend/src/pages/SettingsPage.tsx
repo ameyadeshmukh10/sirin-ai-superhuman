@@ -1563,17 +1563,22 @@ function CodeSnippet({ code }: { code: string }) {
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
   const copy = async () => {
+    let ok = false;
     try {
       await navigator.clipboard.writeText(code);
+      ok = true;
     } catch {
       // clipboard API can be unavailable (http, old browsers) — fall back
       const area = document.createElement("textarea");
       area.value = code;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
       document.body.appendChild(area);
       area.select();
-      document.execCommand("copy");
+      ok = document.execCommand("copy");
       area.remove();
     }
+    if (!ok) return; // don't claim success the admin would paste stale content on
     setCopied(true);
     timer.current = window.setTimeout(() => setCopied(false), 2000);
   };
@@ -1595,6 +1600,17 @@ function CodeSnippet({ code }: { code: string }) {
 }
 
 /**
+ * Escape a string for interpolation into a double-quoted HTML attribute.
+ */
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
  * Sections with copy-paste snippets for putting the experience on any website:
  * the floating chat bubble and the full-page iframe embed.
  */
@@ -1605,7 +1621,7 @@ function EmbedSections({ personaName }: { personaName: string }) {
   const iframeSnippet = [
     `<iframe`,
     `  src="${origin}/?embed=1"`,
-    `  title="${name} — AI guide"`,
+    `  title="${escapeAttr(name)} — AI guide"`,
     `  allow="microphone; autoplay; clipboard-write"`,
     `  style="width: 100%; height: 700px; border: 0; border-radius: 16px;"`,
     `></iframe>`,

@@ -27,6 +27,9 @@ type Props = {
   onExpired: () => void;
 };
 
+/**
+ * A live session rendered as the widget's panel or expanded layout.
+ */
 export default function EmbedSession({
   sessionId,
   expanded,
@@ -272,6 +275,9 @@ export default function EmbedSession({
   );
 }
 
+/**
+ * Round icon toggle for the floating control pill (mic, speaker).
+ */
 function ControlIcon({
   label,
   active,
@@ -300,6 +306,9 @@ function ControlIcon({
   );
 }
 
+/**
+ * Icon button in the widget header (expand/compress, close).
+ */
 function HeaderIcon({
   label,
   onClick,

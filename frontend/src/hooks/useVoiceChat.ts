@@ -15,6 +15,10 @@ type Options = {
   onMicToggle?: (on: boolean) => void;
 };
 
+/**
+ * Owns the mic toggle and speech input for a session, including barge-in on
+ * interim transcripts and suppression of the persona's own echo.
+ */
 export function useVoiceChat({ state, sendMessage, interrupt, onMicToggle }: Options): {
   micOn: boolean;
   setMicOn: (on: boolean) => void;
@@ -31,8 +35,16 @@ export function useVoiceChat({ state, sendMessage, interrupt, onMicToggle }: Opt
   useEffect(() => {
     const active = state.playing || state.status !== "idle";
     if (activeRef.current && !active) stoppedAtRef.current = Date.now();
+    // the barge-in achieved its interrupt; nothing left to suppress
+    if (!active) bargedRef.current = false;
     activeRef.current = active;
   }, [state.playing, state.status]);
+
+  useEffect(() => {
+    // recognition stopped mid-utterance discards its pending final, which is
+    // the only other place the flag clears
+    if (!micOn) bargedRef.current = false;
+  }, [micOn]);
 
   useEffect(() => {
     const lastAssistant = [...state.messages].reverse().find((m) => m.role === "assistant");
@@ -66,12 +78,12 @@ export function useVoiceChat({ state, sendMessage, interrupt, onMicToggle }: Opt
     },
   });
 
+  // side effects stay out of the state updater (StrictMode re-invokes it)
   const toggleMic = useCallback(() => {
-    setMicOn((on) => {
-      onMicToggle?.(!on);
-      return !on;
-    });
-  }, [onMicToggle]);
+    const next = !micOn;
+    setMicOn(next);
+    onMicToggle?.(next);
+  }, [micOn, onMicToggle]);
 
   return { micOn, setMicOn, toggleMic, speech };
 }
