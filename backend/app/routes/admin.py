@@ -370,17 +370,24 @@ async def update_persona(body: PersonaUpdate):
 
 @router.post("/persona/image")
 async def upload_persona_image(file: UploadFile = File(...)):
-    """Replace the persona photo; seed() auto-detects persona.<ext> on startup."""
+    """Replace the persona photo; seed() auto-detects persona*.<ext> on startup.
+
+    Every upload gets a unique filename (like logo and deck-slide replacements),
+    so its URL changes and browsers can't keep serving the previous photo from
+    cache — with the old fixed persona.<ext> name, a replacement saved fine but
+    every page kept showing the stale cached image."""
     ext = _file_ext(file.filename, IMAGE_EXTS)
+    # full UUID: a truncated name colliding with the current photo's would
+    # silently reuse its URL — the exact stale-cache failure this scheme fixes
+    name = f"persona-{uuid.uuid4().hex}{ext}"
     # write to a temp name first so a failed upload can't destroy the current
-    # photo; the leading dot keeps it out of the persona.* seed detection
-    tmp_rel = f".persona-upload-{uuid.uuid4().hex[:8]}{ext}"
+    # photo; the leading dot keeps it out of the persona* seed detection
+    tmp_rel = f".persona-upload-{uuid.uuid4().hex}{ext}"
     await _save_upload(file, tmp_rel, MAX_IMAGE_BYTES)
     tmp = UPLOADS_DIR / tmp_rel
     async with _replace_lock:
         try:
-            # atomic swap: overwrites a same-extension predecessor in one step
-            tmp.rename(UPLOADS_DIR / f"persona{ext}")
+            tmp.rename(UPLOADS_DIR / name)
         except OSError:
             tmp.unlink(missing_ok=True)
             raise
@@ -389,20 +396,19 @@ async def upload_persona_image(file: UploadFile = File(...)):
         # copy before mutating: the memory store hands out its live doc, and a
         # failed upsert below must leave the stored doc untouched
         persona = dict(await _get_persona_or_500())
-        prior_path = persona.get("image_path")
-        persona["image_path"] = f"/uploads/persona{ext}"
+        persona["image_path"] = f"/uploads/{name}"
         try:
             await store.upsert_persona(persona)
         except BaseException:
-            if prior_path != persona["image_path"]:
-                # the prior photo (other extension or /content default) still
-                # exists and stays referenced — drop the unreferenced new file
-                (UPLOADS_DIR / f"persona{ext}").unlink(missing_ok=True)
+            # the prior photo still exists and stays referenced — drop the
+            # unreferenced new file
+            (UPLOADS_DIR / name).unlink(missing_ok=True)
             raise
-        # other-extension predecessors go only after the doc durably points at
-        # the new file — a failure at any earlier step leaves a working photo
-        for path in UPLOADS_DIR.glob("persona.*"):
-            if path.suffix != ext:
+        # predecessors (unique-named and legacy fixed-name alike) go only after
+        # the doc durably points at the new file — a failure at any earlier
+        # step leaves a working photo
+        for path in UPLOADS_DIR.glob("persona*.*"):
+            if path.name != name:
                 path.unlink(missing_ok=True)
     return {"image_url": persona["image_path"]}
 
