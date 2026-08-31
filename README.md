@@ -1,6 +1,6 @@
-# 1-Mind Superhuman (prototype)
+# 1-Mind Superhuman 
 
-A 1mind.com-style "Superhuman" — an AI sales persona web app for GTM teams.
+A 1mind.com-style "Superhuman" — an AI Agent for Demo and web sales in an easily configurable web app for GTM teams.
 Uses anthropic API endpoints, elevenlabs, and heygen live avatar streaming. Deploy on railway. 
 
 Supports video, slide decks (PDF or PNG), easily customizable without code, and can be embedded onto a web page as a module, as a web chat experience, or live on its own dedicated URL and web experience. 
