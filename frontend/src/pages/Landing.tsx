@@ -5,6 +5,9 @@ import Wordmark from "../components/Wordmark";
 import { player } from "../lib/pcmPlayer";
 import { OutOfCreditsError, createSession, fetchPersona, type Persona } from "../lib/protocol";
 
+/**
+ * Landing page: introduces the persona and starts a session.
+ */
 export default function Landing() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();

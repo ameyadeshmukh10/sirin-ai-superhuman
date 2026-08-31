@@ -11,6 +11,9 @@ import { useSession } from "../hooks/useSession";
 import { useVoiceChat } from "../hooks/useVoiceChat";
 import { player } from "../lib/pcmPlayer";
 
+/**
+ * The standalone conversation page: chat panel beside the persona stage.
+ */
 export default function SessionPage() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();

@@ -4,6 +4,9 @@ import Landing from "./pages/Landing";
 import SessionPage from "./pages/SessionPage";
 import SettingsPage from "./pages/SettingsPage";
 
+/**
+ * Route table: landing, live session, settings, and the embeddable widget.
+ */
 export default function App() {
   return (
     <Routes>

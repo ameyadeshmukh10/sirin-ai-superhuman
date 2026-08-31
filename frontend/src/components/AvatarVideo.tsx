@@ -15,6 +15,9 @@ type Props = {
   className?: string;
 };
 
+/**
+ * The avatar's live video stage, joined via LiveKit.
+ */
 export default function AvatarVideo({
   url,
   token,
