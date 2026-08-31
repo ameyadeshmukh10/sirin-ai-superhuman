@@ -69,7 +69,10 @@ immediately. Without `MONGODB_URL` an in-memory store is used (sessions lost on 
 ## Settings view
 
 The gear icon on the landing page (or `/settings`) opens a configuration view
-where the whole experience can be edited at runtime — no redeploy needed:
+where the whole experience can be edited at runtime — no redeploy needed. The
+sections are grouped into tabs — Branding, Persona, Messaging, Content and
+Credits — with the active tab kept in the URL (`?tab=…`) so links and reloads
+land on the right group:
 
 - **Brand**: wordmark (accent-colored text or an uploaded logo file) and the
   book-a-meeting URL.

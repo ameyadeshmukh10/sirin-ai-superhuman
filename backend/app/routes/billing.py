@@ -43,8 +43,8 @@ async def create_checkout(pack_id: str, base_url: str) -> str:
     base = (settings.public_base_url or base_url).rstrip("/")
     form = {
         "mode": "payment",
-        "success_url": f"{base}/settings?credits=purchased",
-        "cancel_url": f"{base}/settings",
+        "success_url": f"{base}/settings?tab=credits&credits=purchased",
+        "cancel_url": f"{base}/settings?tab=credits",
         "line_items[0][quantity]": "1",
         "line_items[0][price_data][currency]": "usd",
         "line_items[0][price_data][unit_amount]": str(pack["usd_cents"]),
