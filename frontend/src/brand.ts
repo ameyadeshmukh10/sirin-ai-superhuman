@@ -40,6 +40,8 @@ export const THEME_COLORS: { key: string; label: string; hint: string; default: 
 
 // Google Fonts the settings view offers. `query` is the css2 family fragment
 // (weights each family actually ships); `serif` picks the fallback stack.
+// KEEP IN SYNC with HEADING_FONT_NAMES / BODY_FONT_NAMES in
+// backend/app/routes/admin.py — the backend rejects names outside those sets.
 export type FontOption = { name: string; query: string; serif: boolean };
 
 export const HEADING_FONTS: FontOption[] = [

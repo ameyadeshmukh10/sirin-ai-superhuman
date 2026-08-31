@@ -510,6 +510,15 @@ const VOICES: { name: string; id: string }[] = [
 ];
 
 /**
+ * The voice select's value for a persona: "" (the "Server default" option)
+ * when the persona speaks with the env-configured voice, else the stored ID.
+ */
+function voiceFromPersona(persona: AdminPersona): string {
+  const id = persona.voice_id ?? "";
+  return id === persona.default_voice_id ? "" : id;
+}
+
+/**
  * Section for managing persona details (name, company, greeting, topics, etc).
  */
 function PersonaSection({
@@ -530,7 +539,7 @@ function PersonaSection({
     description: persona.description ?? "",
     greeting: persona.greeting ?? "",
     mic_disclaimer: persona.mic_disclaimer ?? "",
-    voice_id: persona.voice_id ?? "",
+    voice_id: voiceFromPersona(persona),
     topics: (persona.default_topics ?? []).join("\n"),
   });
   const set =
@@ -541,9 +550,13 @@ function PersonaSection({
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     save.run(async () => {
-      const { topics, ...fields } = form;
+      const { topics, voice_id, ...fields } = form;
       const res = await adminApi.updatePersona({
         ...fields,
+        // only sent when actually changed ("" = clear back to the server
+        // default), so an unrelated save can never re-store or trip over
+        // whatever voice is already configured
+        ...(voice_id !== voiceFromPersona(persona) ? { voice_id } : {}),
         default_topics: topics.split("\n").map((t) => t.trim()).filter(Boolean),
       });
       onConfig({ persona: res.persona });
@@ -569,7 +582,7 @@ function PersonaSection({
         description: fresh.persona.description ?? "",
         greeting: fresh.persona.greeting ?? "",
         mic_disclaimer: fresh.persona.mic_disclaimer ?? "",
-        voice_id: fresh.persona.voice_id ?? "",
+        voice_id: voiceFromPersona(fresh.persona),
         topics: (fresh.persona.default_topics ?? []).join("\n"),
       });
     });
@@ -628,8 +641,9 @@ function PersonaSection({
         </div>
         <Field label="Voice (how the persona sounds)">
           <select value={form.voice_id} onChange={set("voice_id")} className={inputCls}>
-            {!VOICES.some((v) => v.id === form.voice_id) && (
-              <option value={form.voice_id}>Server default</option>
+            <option value="">Server default</option>
+            {form.voice_id !== "" && !VOICES.some((v) => v.id === form.voice_id) && (
+              <option value={form.voice_id}>Custom voice (current)</option>
             )}
             {VOICES.map((v) => (
               <option key={v.id} value={v.id}>

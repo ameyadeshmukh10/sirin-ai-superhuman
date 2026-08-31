@@ -61,9 +61,7 @@ VOICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # Theme override: color tokens the settings view may re-color (they map to the
 # --color-<key> custom properties in frontend/src/index.css) and the Google
-# Fonts the frontend offers. Fonts are validated by shape only — the frontend
-# resolves names against its own catalog (frontend/src/brand.ts) and ignores
-# anything unknown, so the stored name can never build a hostile fonts URL.
+# Fonts the frontend offers.
 THEME_COLOR_KEYS = {
     "accent",
     "ink",
@@ -76,7 +74,35 @@ THEME_COLOR_KEYS = {
     "atlantic",
 }
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
-FONT_NAME_RE = re.compile(r"^[A-Za-z0-9 ]{1,60}$")
+
+# KEEP IN SYNC with HEADING_FONTS / BODY_FONTS in frontend/src/brand.ts.
+# The frontend resolves stored names against its catalog and silently ignores
+# anything else, so accepting an unlisted name would store a font that never
+# applies — reject it here instead.
+HEADING_FONT_NAMES = {
+    "Source Serif 4",
+    "Playfair Display",
+    "Lora",
+    "Merriweather",
+    "Libre Baskerville",
+    "Cormorant Garamond",
+    "DM Serif Display",
+    "Space Grotesk",
+    "Poppins",
+    "Montserrat",
+}
+BODY_FONT_NAMES = {
+    "Inter",
+    "Roboto",
+    "Open Sans",
+    "Source Sans 3",
+    "Nunito Sans",
+    "Work Sans",
+    "IBM Plex Sans",
+    "Karla",
+    "DM Sans",
+    "Manrope",
+}
 
 # HeyGen public-avatar catalog, bundled with the app (id, name, preview_url,
 # portrait). The settings view browses it; the chosen avatar is stored as the
@@ -175,6 +201,9 @@ def _admin_persona(persona: dict) -> dict:
     return {
         "id": persona["_id"],
         "image_url": persona.get("image_path"),
+        # lets the voice dropdown show the env-configured voice as "Server
+        # default" instead of presenting its raw ID as a custom selection
+        "default_voice_id": settings.elevenlabs_voice_id,
         **{k: persona.get(k) for k in sorted(PERSONA_EDITABLE_FIELDS)},
     }
 
@@ -296,11 +325,19 @@ async def update_persona(body: PersonaUpdate):
     """Update persona fields on the live doc and persist them as overrides."""
     store = get_store()
     fields: dict = {}
-    for key in ("name", "company", "website", "tagline", "voice_id"):
+    voice_cleared = False
+    if body.voice_id is not None:
+        voice = body.voice_id.strip()
+        if not voice:
+            # blank = explicit clear: drop the override, back to the env default
+            voice_cleared = True
+        elif not VOICE_ID_RE.fullmatch(voice):
+            raise HTTPException(422, "voice_id must be an ElevenLabs voice ID")
+        else:
+            fields["voice_id"] = voice
+    for key in ("name", "company", "website", "tagline"):
         value = _clean_str(getattr(body, key), max_len=200)
         if value is not None:
-            if key == "voice_id" and not VOICE_ID_RE.fullmatch(value):
-                raise HTTPException(422, "voice_id must be an ElevenLabs voice ID")
             fields[key] = value
     for key in ("description", "greeting", "mic_disclaimer"):
         value = _clean_str(getattr(body, key))
@@ -311,15 +348,22 @@ async def update_persona(body: PersonaUpdate):
         if not topics:
             raise HTTPException(422, "default_topics must contain at least one topic")
         fields["default_topics"] = topics[:6]
-    if not fields:
+    if not fields and not voice_cleared:
         raise HTTPException(422, "no fields to update")
 
     override = await store.get_override("persona") or {}
     override.update(fields)
-    await store.set_override("persona", override)
+    if voice_cleared:
+        override.pop("voice_id", None)
+    if override:
+        await store.set_override("persona", override)
+    else:
+        await store.delete_override("persona")
 
     persona = await _get_persona_or_500()
     persona.update(fields)
+    if voice_cleared:
+        persona["voice_id"] = settings.elevenlabs_voice_id
     await store.upsert_persona(persona)
     return {"persona": _admin_persona(persona)}
 
@@ -453,11 +497,11 @@ async def update_theme(body: ThemeUpdate):
         colors[key] = value.lower()
     if colors:
         theme["colors"] = colors
-    for field in ("heading_font", "body_font"):
+    for field, allowed in (("heading_font", HEADING_FONT_NAMES), ("body_font", BODY_FONT_NAMES)):
         value = (getattr(body, field) or "").strip()
         if value:
-            if not FONT_NAME_RE.fullmatch(value):
-                raise HTTPException(422, f"{field} must be a Google Font name")
+            if value not in allowed:
+                raise HTTPException(422, f"{field} must be one of the supported fonts")
             theme[field] = value
 
     store = get_store()
